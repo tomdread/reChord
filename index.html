@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>miDIai.org reChord 0.03.2.3</title>
+<title>miDIai.org reChord 0.03.2.3.1</title>
 <style>
 body {
     font-family: sans-serif;
@@ -92,7 +92,7 @@ code {
 </head>
 <body>
 <h1>miDIai.org reChord</h1>
-<p>rechord.miDIai.org 0.03.2.3</p>
+<p>rechord.miDIai.org</p>
 
 <div id="song-name" style="font-weight: bold; margin-bottom: 8px;"></div>
 <div class="status">
@@ -173,12 +173,14 @@ if (typeof window !== 'undefined') {
 <script>
 "use strict";
 
-/* ————— Mode Constants ————— */
+// === Constants ===
+
+// === Mode Constants ===
 const MODE_STOP = 0;
 const MODE_RECORD = 1;
 const MODE_PLAY = 2;
 
-/* ————— MIDI Constants ————— */
+// === MIDI Constants ===
 const MIDI_CHANNEL_MAIN = 1;    // Channel 1 for main controls
 const MIDI_CHANNEL_DRUMS = 10;  // Channel 10 for drum pads
 
@@ -190,13 +192,13 @@ const MIDI_PITCH_BEND = 0xE0;
 const VELOCITY_THRESHOLD = 64;  // Standard MIDI velocity threshold
 const VELOCITY_MAX = 127;       // Maximum MIDI velocity
 
-/* ————— Timing Constants ————— */
+// === Timing Constants ===
 const SIMULTANEOUS_PRESS_WINDOW = 100;  // ms
 const RECORD_HOLD_THRESHOLD = 500;      // ms
 const PORT_CHANGE_DELAY = 1000;         // ms
 const SAVE_DELAY = 500;                 // ms
 
-/* ————— Sequence Constants ————— */
+// === Sequence Constants ===
 const MAX_SEQUENCE_LENGTH = 16;
 const MAX_CHORD_NOTES = 10;
 
