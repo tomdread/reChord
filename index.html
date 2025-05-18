@@ -173,10 +173,6 @@ if (typeof window !== 'undefined') {
 <script>
 "use strict";
 
-/* ————— Debug Config ————— */
-const DEBUG = true;
-function log(...args) { /* no-op */ }
-
 /* ————— Mode Constants ————— */
 const MODE_STOP = 0;
 const MODE_RECORD = 1;
@@ -247,8 +243,6 @@ Chords.string = [];
 Chords.pads   = {};
 Chords.triggers = {};
 let transposeOffset = 0;
-
-let KEYBOARD_SPLIT_POINT = 60;
 
 // Bass Triggers
 const BASS_TRIGGERS = [75, 78, 80, 82];  // Bass note triggers
