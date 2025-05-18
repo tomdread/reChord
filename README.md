@@ -4,14 +4,20 @@ A web-based MIDI chord recorder and player application that allows musicians to 
 
 ## Features
 
-- Record and store chord progressions
-- Play back recorded chords
-- Multiple MIDI output routing (main, bass, chord, string)
-- Visual piano keyboard interface
-- Chord detection and naming
-- Sequence recording and playback
-- Song-based storage with notes
-- Real-time MIDI visualization
+- Record and store chord progressions (up to 10 notes per chord)
+- Play back recorded chords with multiple output routing
+- Four MIDI output channels:
+  - Main: Direct input passthrough
+  - Bass: For low notes
+  - Chord: For recorded chord playback
+  - String: For individual note playback
+- Visual piano keyboard interface with real-time note visualization
+- Automatic chord detection and naming
+- Sequence recording and playback (up to 8 chords)
+- Song-based storage with notes and sequences
+- Transpose functionality
+- Octave control for full chords and strings
+- Real-time MIDI activity visualization
 
 ## Setup
 
@@ -33,11 +39,16 @@ A web-based MIDI chord recorder and player application that allows musicians to 
 3. Play chords on your MIDI controller to record them
 4. Use the play button to enter playback mode
 5. Trigger recorded chords using your MIDI controller
+6. Use octave controls to shift chord playback up or down
+7. Use transpose controls to change the key of played chords
+8. Record sequences by holding the record button
+9. Navigate sequences using the sequence controls
 
 ## Version
 
-Current version: 0.03.2.1
+Current version: 0.03.2.3
 
 ## License
 
-MIT License 
+Private - All Rights Reserved
+This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>miDIai.org reChord 0.03.2.1</title>
+<title>miDIai.org reChord 0.03.2.3</title>
 <style>
 body {
     font-family: sans-serif;
@@ -92,7 +92,7 @@ code {
 </head>
 <body>
 <h1>miDIai.org reChord</h1>
-<p>rechord.miDIai.org 0.03.2.1</p>
+<p>rechord.miDIai.org 0.03.2.3</p>
 
 <div id="song-name" style="font-weight: bold; margin-bottom: 8px;"></div>
 <div class="status">
@@ -174,8 +174,35 @@ if (typeof window !== 'undefined') {
 "use strict";
 
 /* ————— Debug Config ————— */
-const DEBUG = false;
+const DEBUG = true;
 function log(...args) { /* no-op */ }
+
+/* ————— Mode Constants ————— */
+const MODE_STOP = 0;
+const MODE_RECORD = 1;
+const MODE_PLAY = 2;
+
+/* ————— MIDI Constants ————— */
+const MIDI_CHANNEL_MAIN = 1;    // Channel 1 for main controls
+const MIDI_CHANNEL_DRUMS = 10;  // Channel 10 for drum pads
+
+const MIDI_NOTE_ON = 0x90;
+const MIDI_NOTE_OFF = 0x80;
+const MIDI_CONTROL_CHANGE = 0xB0;
+const MIDI_PITCH_BEND = 0xE0;
+
+const VELOCITY_THRESHOLD = 64;  // Standard MIDI velocity threshold
+const VELOCITY_MAX = 127;       // Maximum MIDI velocity
+
+/* ————— Timing Constants ————— */
+const SIMULTANEOUS_PRESS_WINDOW = 100;  // ms
+const RECORD_HOLD_THRESHOLD = 500;      // ms
+const PORT_CHANGE_DELAY = 1000;         // ms
+const SAVE_DELAY = 500;                 // ms
+
+/* ————— Sequence Constants ————— */
+const MAX_SEQUENCE_LENGTH = 16;
+const MAX_CHORD_NOTES = 10;
 
 /* ————— Grouped State ————— */
 const Chords = {
@@ -196,7 +223,10 @@ let isSequenceMode = false;
 const sequenceStartCC = 115;    // Previous chord
 const sequenceNextCC = 116;     // Next chord
 
-/* ————— MIDI Recorder Logic ————— */
+// Add pad trigger mode state
+let isPadTriggerMode = false;
+
+// ————— MIDI Recorder Logic —————
 "use strict";
 
 // ————— MIDI engine state —————
@@ -209,7 +239,7 @@ let currentOutputs = {
     string: null   // For the 6 white keys
 };
 
-let mode = 0; // 0 = STOP, 1 = RECORD, 2 = PLAY
+let mode = MODE_STOP; // Initialize to STOP mode
 const recordCC = 119, playCC = 118, stopCC = 117;
 
 Chords.record = [];
@@ -220,20 +250,22 @@ let transposeOffset = 0;
 
 let KEYBOARD_SPLIT_POINT = 60;
 
-// Mirrored Bass Triggers (4 right)
-const RIGHT_BASS_TRIGGERS = [75, 78, 80, 82];  // Upper bass triggers
+// Bass Triggers
+const BASS_TRIGGERS = [75, 78, 80, 82];  // Bass note triggers
 
-// Mirrored String Triggers (6 right)
-const RIGHT_STRING_TRIGGERS = [76, 77, 79, 81, 83, 84];  // Upper string triggers
+// String Triggers
+const STRING_TRIGGERS = [76, 77, 79, 81, 83, 84];  // String note triggers
 
-// Full Chord Triggers
-const RIGHT_FULL_CHORD = 51;     // Right hand full chord
+// Chord Triggers
+const FULL_CHORD = 58;     // Full chord trigger
+const FULL_STRING = 73;    // Full string trigger
+const CHORD_TRIGGER_TOGGLE = 48;   // Toggle chord trigger mode
 
-// Octave Control Triggers
-const FULL_CHORD_OCTAVE_UP = 50;    // Full chord octave up
-const FULL_CHORD_OCTAVE_DOWN = 48;  // Full chord octave down
-const STRING_OCTAVE_UP = 74;        // String octave up
-const STRING_OCTAVE_DOWN = 72;      // String octave down
+// Octave Controls
+const CHORD_OCTAVE_UP = 59;    // Chord octave up
+const CHORD_OCTAVE_DOWN = 57;  // Chord octave down
+const STRING_OCTAVE_UP = 74;   // String octave up
+const STRING_OCTAVE_DOWN = 72; // String octave down
 
 // Add these constants near the top of your file, after the MIDI engine state section:
 const DEFAULT_INPUT_NAME = "MPK mini Plus Port 1";
@@ -247,7 +279,6 @@ const DEFAULT_OUTPUT_NAMES = {
 // Port state tracking and debouncing
 const lastPortStates = new Map();
 let portChangeTimeout = null;
-const PORT_CHANGE_DELAY = 1000; // 1 second
 
 function trackPortState(port) {
     lastPortStates.set(port.id, port.state);
@@ -264,7 +295,6 @@ let stringOctaveOffset = 0;
 
 // Add key press tracking with timestamps
 const keyPressTimes = new Map();
-const SIMULTANEOUS_PRESS_WINDOW = 100; // 100ms window for simultaneous press detection
 
 // Track active octave keys
 const activeOctaveKeys = new Set();
@@ -275,7 +305,6 @@ let isWaitingForStorageKey = false;
 
 // Add record button timing variables
 let recordButtonPressTime = 0;
-const RECORD_HOLD_THRESHOLD = 500; // 500ms threshold for hold detection
 let recordHoldCheckInterval = null;
 
 // ————— UI references —————
@@ -464,7 +493,6 @@ function getNoteNameFromMIDI(midiNote) {
 
 // Add debouncing for IndexedDB saves
 let saveTimeout = null;
-const SAVE_DELAY = 500; // milliseconds
 
 function debounceSave() {
     if (saveTimeout) {
@@ -477,10 +505,10 @@ function debounceSave() {
 
 // Define updateStatus function
 function updateStatus() {
-    modeDisplay.textContent = mode === 0 ? "STOP" : mode === 1 ? "RECORD" : "PLAY";
+    modeDisplay.textContent = mode === MODE_STOP ? "STOP" : mode === MODE_RECORD ? "RECORD" : "PLAY";
     
     // Enhanced chord display
-    const currentChord = mode === 1 ? Chords.record : Chords.string;
+    const currentChord = mode === MODE_RECORD ? Chords.record : Chords.string;
     const chordNotes = currentChord.length > 0 
         ? currentChord.map(note => getNoteNameFromMIDI(note)).join(' ')
         : 'No Chord';
@@ -776,14 +804,14 @@ function logMIDIMessage(ev) { /* no-op */ }
 
 // Add pad note mappings
 const PAD_MAP_1 = {
-    53: 36,
-    55: 37,
-    57: 38,
-    59: 39,
-    52: 40,
-    54: 41,
-    56: 42,
-    58: 43
+    50: 36,
+    52: 37,
+    53: 38,
+    55: 39,
+    49: 40,
+    51: 41,
+    54: 42,
+    56: 43
 };
 
 /* ————— Button Management System ————— */
@@ -795,9 +823,9 @@ class ButtonManager {
         this.simultaneousGroups = new Map();
         
         // Constants
-        this.HOLD_THRESHOLD = 500;
-        this.SIMULTANEOUS_WINDOW = 100;
-        this.PRESS_THRESHOLD = 64;
+        this.HOLD_THRESHOLD = RECORD_HOLD_THRESHOLD;
+        this.SIMULTANEOUS_WINDOW = SIMULTANEOUS_PRESS_WINDOW;
+        this.PRESS_THRESHOLD = VELOCITY_THRESHOLD;
     }
 
     // Register a button with its configuration
@@ -914,7 +942,7 @@ const buttonManager = new ButtonManager();
 // Register buttons
 buttonManager.registerButton(recordCC, {
     onPress: () => {
-        if (mode === 1) {
+        if (mode === MODE_RECORD) {
             isWaitingForStorageKey = true;
             showNotification('Hold record button and press a storage key', 'info');
         }
@@ -923,7 +951,7 @@ buttonManager.registerButton(recordCC, {
         if (isWaitingForStorageKey) {
             isWaitingForStorageKey = false;
         } else if (duration < buttonManager.HOLD_THRESHOLD && !isRecordingSequence) {
-            mode = 1;
+            mode = MODE_RECORD;
             Chords.record = [];
             updateStatus();
             showNotification('Recording Mode Activated', 'info');
@@ -935,13 +963,13 @@ buttonManager.registerButton(recordCC, {
             } else {
                 showNotification('No chords recorded in sequence', 'warning');
             }
-            mode = 2;
+            mode = MODE_PLAY;
             updateStatus();
             showNotification('Play Mode Activated', 'info');
         }
     },
     onHold: () => {
-        if (!isRecordingSequence && mode !== 1) {
+        if (!isRecordingSequence && mode !== MODE_RECORD) {
             isRecordingSequence = true;
             Chords.sequence = [];
             showNotification('Sequence Recording Started', 'info');
@@ -951,7 +979,7 @@ buttonManager.registerButton(recordCC, {
 
 buttonManager.registerButton(playCC, {
     onPress: () => {
-        mode = 2;
+        mode = MODE_PLAY;
         updateStatus();
         showNotification('Play Mode Activated', 'info');
     }
@@ -959,7 +987,7 @@ buttonManager.registerButton(playCC, {
 
 buttonManager.registerButton(stopCC, {
     onPress: () => {
-        mode = 0;
+        mode = MODE_STOP;
         updateStatus();
         showNotification('Stop Mode Activated', 'info');
     }
@@ -1025,8 +1053,8 @@ function handleMIDIMessage(ev) {
         const value = data2;
 
         // Pass through pitch bend and modulation
-        if (type === 0xE0 || type === 0xB0) {
-            if (type === 0xE0 || (type === 0xB0 && data1 === 1)) {
+        if (type === MIDI_PITCH_BEND || type === MIDI_CONTROL_CHANGE) {
+            if (type === MIDI_PITCH_BEND || (type === MIDI_CONTROL_CHANGE && data1 === 1)) {
                 ['main', 'bass', 'chord', 'string'].forEach(port => {
                     send(ev.data, port);
                 });
@@ -1035,29 +1063,29 @@ function handleMIDIMessage(ev) {
         }
 
         // Update keyboard visualization
-        if (type === 0x90 || type === 0x80) {
-            updateKeyboard(pitch, type === 0x90 && value > 0);
+        if (type === MIDI_NOTE_ON || type === MIDI_NOTE_OFF) {
+            updateKeyboard(pitch, type === MIDI_NOTE_ON && value > 0);
         }
 
         // Pass through pad messages
-        if (channel === 10) {
+        if (channel === MIDI_CHANNEL_DRUMS) {
             send(ev.data, 'main');
             return;
         }
 
         // Handle sequence recording
-        if (isRecordingSequence && type === 0x90 && channel === 1 && value > 0) {
+        if (isRecordingSequence && type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && value > 0) {
             const padNumber = PAD_MAP_1[pitch] || pitch;
-            if (Chords.pads[padNumber] && Chords.sequence.length < 8) {
+            if (Chords.pads[padNumber] && Chords.sequence.length < MAX_SEQUENCE_LENGTH) {
                 Chords.sequence.push(padNumber);
-                showNotification(`Added chord ${padNumber} to sequence (${Chords.sequence.length}/8)`, 'info');
+                showNotification(`Added chord ${padNumber} to sequence (${Chords.sequence.length}/${MAX_SEQUENCE_LENGTH})`, 'info');
             }
             return;
         }
 
         // — RECORD mode —
-        if (mode === 1) {
-            if (type === 0x90 && channel === 1) {
+        if (mode === MODE_RECORD) {
+            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN) {
                 if (isWaitingForStorageKey) {
                     // This is the storage key press while holding record
                     const storageKey = PAD_MAP_1[pitch] || pitch;
@@ -1065,7 +1093,7 @@ function handleMIDIMessage(ev) {
                         Chords.pads[storageKey] = {
                             chord: [...Chords.record]
                         };
-                        sendNoteOffs(Chords.record, 1, 'chord');
+                        sendNoteOffs(Chords.record, MIDI_CHANNEL_MAIN, 'chord');
                         showNotification(`Chord saved to pad ${storageKey}`, 'success');
                         Chords.record = []; // Clear the current recording
                         updateStatus();
@@ -1080,7 +1108,7 @@ function handleMIDIMessage(ev) {
                 // Normal recording behavior
                 const noteIndex = Chords.record.indexOf(pitch);
                 if (noteIndex === -1) {
-                    if (Chords.record.length < 10) {
+                    if (Chords.record.length < MAX_CHORD_NOTES) {
                         Chords.record.push(pitch);
                         Chords.record.sort((a,b)=>a-b);
                         updateStatus();
@@ -1093,7 +1121,7 @@ function handleMIDIMessage(ev) {
                 }
                 return;
             }
-            if (type === 0x80 && channel === 1) {
+            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
                 // Only pass through note-offs when not in storage key selection mode
                 if (!isWaitingForStorageKey) {
                     send(ev.data, 'main');
@@ -1106,27 +1134,27 @@ function handleMIDIMessage(ev) {
         }
 
         // — PLAY mode —
-        if (mode === 2) {
+        if (mode === MODE_PLAY) {
             // Octave control handling
-            if (type === 0x90 && channel === 1 && value > 0) {  // Only handle note-on events
+            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && value > 0) {
                 const now = Date.now();
                 
                 // Track key press time
-                if (pitch === FULL_CHORD_OCTAVE_UP || pitch === FULL_CHORD_OCTAVE_DOWN ||
+                if (pitch === CHORD_OCTAVE_UP || pitch === CHORD_OCTAVE_DOWN ||
                     pitch === STRING_OCTAVE_UP || pitch === STRING_OCTAVE_DOWN) {
                     keyPressTimes.set(pitch, now);
                 }
 
                 // Check for simultaneous full chord octave keys
-                const fullChordUpTime = keyPressTimes.get(FULL_CHORD_OCTAVE_UP);
-                const fullChordDownTime = keyPressTimes.get(FULL_CHORD_OCTAVE_DOWN);
+                const fullChordUpTime = keyPressTimes.get(CHORD_OCTAVE_UP);
+                const fullChordDownTime = keyPressTimes.get(CHORD_OCTAVE_DOWN);
                 if (fullChordUpTime && fullChordDownTime && 
                     Math.abs(fullChordUpTime - fullChordDownTime) < SIMULTANEOUS_PRESS_WINDOW) {
                     fullChordOctaveOffset = 0;
                     showNotification('Full chord octave reset to 0', 'info');
                     // Clear the timestamps after use
-                    keyPressTimes.delete(FULL_CHORD_OCTAVE_UP);
-                    keyPressTimes.delete(FULL_CHORD_OCTAVE_DOWN);
+                    keyPressTimes.delete(CHORD_OCTAVE_UP);
+                    keyPressTimes.delete(CHORD_OCTAVE_DOWN);
                     return;
                 }
 
@@ -1144,14 +1172,14 @@ function handleMIDIMessage(ev) {
                 }
 
                 // Handle individual key presses
-                if (pitch === FULL_CHORD_OCTAVE_UP) {
+                if (pitch === CHORD_OCTAVE_UP) {
                     fullChordOctaveOffset++;
-                    showNotification(`Full chord octave: ${fullChordOctaveOffset >= 0 ? '+' : ''}${fullChordOctaveOffset}`, 'info');
+                    showNotification(`Chord octave: ${fullChordOctaveOffset >= 0 ? '+' : ''}${fullChordOctaveOffset}`, 'info');
                     return;
                 }
-                if (pitch === FULL_CHORD_OCTAVE_DOWN) {
+                if (pitch === CHORD_OCTAVE_DOWN) {
                     fullChordOctaveOffset--;
-                    showNotification(`Full chord octave: ${fullChordOctaveOffset >= 0 ? '+' : ''}${fullChordOctaveOffset}`, 'info');
+                    showNotification(`Chord octave: ${fullChordOctaveOffset >= 0 ? '+' : ''}${fullChordOctaveOffset}`, 'info');
                     return;
                 }
                 if (pitch === STRING_OCTAVE_UP) {
@@ -1166,39 +1194,78 @@ function handleMIDIMessage(ev) {
                 }
             }
 
+            // Pad trigger mode toggle
+            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && pitch === CHORD_TRIGGER_TOGGLE) {
+                isPadTriggerMode = !isPadTriggerMode;
+                showNotification(`Chord trigger mode ${isPadTriggerMode ? 'enabled' : 'disabled'}`, 'info');
+                return;
+            }
+
+            // Block empty pad messages in play mode
+            if ((type === MIDI_NOTE_ON || type === MIDI_NOTE_OFF) && 
+                ((channel === MIDI_CHANNEL_DRUMS) || (channel === MIDI_CHANNEL_MAIN && PAD_MAP_1[pitch]))) {
+                const padNumber = channel === MIDI_CHANNEL_DRUMS ? pitch : PAD_MAP_1[pitch];
+                // Only process if the pad has a stored chord
+                if (!Chords.pads[padNumber] || !Chords.pads[padNumber].chord || Chords.pads[padNumber].chord.length === 0) {
+                    if (type === MIDI_NOTE_ON && value > 0) { // Only show notification on note-on with velocity > 0
+                        showNotification(`No chord stored on pad ${padNumber}`, 'warning');
+                    }
+                    return; // Block the message completely
+                }
+            }
+
             // load chord from pad
-            if ((type === 0x90 && channel === 10 && Chords.pads[pitch]) || 
-                (type === 0x90 && channel === 1 && PAD_MAP_1[pitch] && Chords.pads[PAD_MAP_1[pitch]])) {
+            if ((type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_DRUMS && Chords.pads[pitch]) || 
+                (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && PAD_MAP_1[pitch] && Chords.pads[PAD_MAP_1[pitch]])) {
                 
                 // Get the actual pad number - either direct from channel 10 or mapped from channel 1
-                const padNumber = channel === 10 ? pitch : PAD_MAP_1[pitch];
+                const padNumber = channel === MIDI_CHANNEL_DRUMS ? pitch : PAD_MAP_1[pitch];
                 const pad = Chords.pads[padNumber];
                 
-                if (pad.chord) {
+                // Only proceed if the pad has a stored chord
+                if (pad && pad.chord && pad.chord.length > 0) {
                     Chords.string = [...pad.chord];
                     // If this is a 10-note chord (has bass notes), combine them for display
                     if (pad.bass) {
                         Chords.string = [...pad.bass, ...pad.chord];
                     }
+
+                    // If in pad trigger mode, also trigger the full chord output
+                    if (isPadTriggerMode) {
+                        const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
+                        Chords.triggers[padNumber] = transposedChord;
+                        sendChord(transposedChord, value, MIDI_CHANNEL_MAIN, 'chord');
+                    }
+                    
+                    if (pad.bass) {
+                        // Store bass notes for this pad
+                        pad.bassNotes = [...pad.bass];
+                    } else {
+                        pad.bassNotes = [];
+                    }
+                    updateStatus();
+                    showNotification(`Loaded chord from pad ${padNumber}${isPadTriggerMode ? ' (triggered)' : ''}`, 'info');
                 } else {
-                    Chords.string = Array.isArray(pad) ? [...pad] : [];
+                    showNotification(`No chord stored on pad ${padNumber}`, 'warning');
                 }
-                if (pad.bass) {
-                    // Store bass notes for this pad
-                    pad.bassNotes = [...pad.bass];
-                } else {
-                    pad.bassNotes = [];
-                }
-                updateStatus();
-                showNotification(`Loaded chord from pad ${padNumber}`, 'info');
                 return;
             }
-            // swallow pad presses - for both channel 10 and mapped channel 1 pads
-            if ((type === 0x90 || type === 0x80) && channel === 10) return;
-            if ((type === 0x90 || type === 0x80) && channel === 1 && PAD_MAP_1[pitch]) return;
+
+            // Handle pad release in trigger mode
+            if (isPadTriggerMode && ((type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_DRUMS) || 
+                (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN && PAD_MAP_1[pitch]))) {
+                const padNumber = channel === MIDI_CHANNEL_DRUMS ? pitch : PAD_MAP_1[pitch];
+                // Only handle release if we have triggered notes for this pad
+                if (Chords.triggers[padNumber]) {
+                    const notes = Chords.triggers[padNumber];
+                    notes.forEach(note => send([MIDI_NOTE_OFF, note, 0], 'chord'));
+                    delete Chords.triggers[padNumber];
+                }
+                return;
+            }
 
             // Direct transpose mapping for notes 60-71
-            if (type === 0x90 && channel === 1) {
+            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN) {
                 if (pitch >= 60 && pitch <= 71) {
                     transposeOffset = pitch - 60;  // 60 = 0, 61 = +1, etc.
                     showNotification(`Transpose set to ${transposeOffset}`, 'info');
@@ -1206,65 +1273,81 @@ function handleMIDIMessage(ev) {
                 }
             }
 
-            // Full chord trigger
-            if (type === 0x90 && channel === 1 && pitch === RIGHT_FULL_CHORD) {
-                if (Chords.string.length) {
-                    const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
-                    Chords.triggers[pitch] = transposedChord;
-                    sendChord(transposedChord, value, 1, 'chord');
-                }
-                return;
-            }
-            if (type === 0x80 && channel === 1 && pitch === RIGHT_FULL_CHORD) {
-                const notes = Chords.triggers[pitch] || [];
-                notes.forEach(note => send([0x80, note, 0], 'chord'));
-                delete Chords.triggers[pitch];
-                return;
-            }
-
             // String triggers
-            if (type === 0x90 && channel === 1) {
-                const isRightString = RIGHT_STRING_TRIGGERS.includes(pitch);
+            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN) {
+                const isString = STRING_TRIGGERS.includes(pitch);
                 
-                if (isRightString && Chords.string.length) {
-                    const idx = RIGHT_STRING_TRIGGERS.indexOf(pitch);
+                if (isString && Chords.string.length) {
+                    const idx = STRING_TRIGGERS.indexOf(pitch);
                     if (idx >= Chords.string.length) idx = Chords.string.length - 1;
                     const note = Chords.string[idx] + transposeOffset + (stringOctaveOffset * 12);
                     Chords.triggers[pitch] = [note];
-                    sendChord([note], value, 1, 'string');
+                    sendChord([note], value, MIDI_CHANNEL_MAIN, 'string');
                 }
-                if (isRightString) return;
+                if (isString) return;
             }
-            if (type === 0x80 && channel === 1) {
-                if (RIGHT_STRING_TRIGGERS.includes(pitch)) {
+            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
+                if (STRING_TRIGGERS.includes(pitch)) {
                     const notes = Chords.triggers[pitch] || [];
-                    notes.forEach(note => send([0x80, note, 0], 'string'));
+                    notes.forEach(note => send([MIDI_NOTE_OFF, note, 0], 'string'));
                     delete Chords.triggers[pitch];
                     return;
                 }
             }
 
             // Bass triggers
-            if (type === 0x90 && channel === 1) {
-                const isRightBass = RIGHT_BASS_TRIGGERS.includes(pitch);
+            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN) {
+                const isBass = BASS_TRIGGERS.includes(pitch);
                 
-                if (isRightBass && Chords.string.length) {
-                    const idx = RIGHT_BASS_TRIGGERS.indexOf(pitch);
+                if (isBass && Chords.string.length) {
+                    const idx = BASS_TRIGGERS.indexOf(pitch);
                     if (idx < Chords.string.length) {
                         const bass = Chords.string[idx] + transposeOffset + (stringOctaveOffset * 12) - 12;
                         Chords.triggers[pitch] = [bass];
-                        sendChord([bass], value, 1, 'bass');
+                        sendChord([bass], value, MIDI_CHANNEL_MAIN, 'bass');
                     }
                 }
-                if (isRightBass) return;
+                if (isBass) return;
             }
-            if (type === 0x80 && channel === 1) {
-                if (RIGHT_BASS_TRIGGERS.includes(pitch)) {
+            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
+                if (BASS_TRIGGERS.includes(pitch)) {
                     const notes = Chords.triggers[pitch] || [];
-                    notes.forEach(note => send([0x80, note, 0], 'bass'));
+                    notes.forEach(note => send([MIDI_NOTE_OFF, note, 0], 'bass'));
                     delete Chords.triggers[pitch];
                     return;
                 }
+            }
+
+            // Full chord trigger
+            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && pitch === FULL_CHORD) {
+                if (Chords.string.length) {
+                    const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
+                    Chords.triggers[pitch] = transposedChord;
+                    sendChord(transposedChord, value, MIDI_CHANNEL_MAIN, 'chord');
+                }
+                return;
+            }
+            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN && pitch === FULL_CHORD) {
+                const notes = Chords.triggers[pitch] || [];
+                notes.forEach(note => send([MIDI_NOTE_OFF, note, 0], 'chord'));
+                delete Chords.triggers[pitch];
+                return;
+            }
+
+            // Full string trigger
+            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && pitch === FULL_STRING) {
+                if (Chords.string.length) {
+                    const transposedChord = Chords.string.map(n => n + transposeOffset + (stringOctaveOffset * 12));
+                    Chords.triggers[pitch] = transposedChord;
+                    sendChord(transposedChord, value, MIDI_CHANNEL_MAIN, 'string');
+                }
+                return;
+            }
+            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN && pitch === FULL_STRING) {
+                const notes = Chords.triggers[pitch] || [];
+                notes.forEach(note => send([MIDI_NOTE_OFF, note, 0], 'string'));
+                delete Chords.triggers[pitch];
+                return;
             }
 
             // everything else passthrough
@@ -1284,7 +1367,7 @@ function send(data, outputType = 'main') {
     if (!output) return;
     try {
         // Ensure note-off messages have velocity 0
-        if ((data[0] & 0xF0) === 0x80) {
+        if ((data[0] & 0xF0) === MIDI_NOTE_OFF) {
             data[2] = 0;
         }
         output.send(data);
@@ -1293,8 +1376,8 @@ function send(data, outputType = 'main') {
         // Add visual feedback for note messages
         const [status, pitch, velocity] = data;
         const type = status & 0xF0;
-        if (type === 0x90 || type === 0x80) {
-            updateKeyboard(pitch, type === 0x90 && velocity > 0, outputType);
+        if (type === MIDI_NOTE_ON || type === MIDI_NOTE_OFF) {
+            updateKeyboard(pitch, type === MIDI_NOTE_ON && velocity > 0, outputType);
         }
     } catch (error) {
         showNotification(`MIDI ${outputType} output error: ${error.message}`, 'warning');
@@ -1303,14 +1386,14 @@ function send(data, outputType = 'main') {
 
 function sendChord(notes, vel, ch, outputType = 'chord') {
     notes.forEach(n => {
-        send([0x90 | ((ch - 1) & 0x0F), n, vel], outputType);
+        send([MIDI_NOTE_ON | ((ch - 1) & 0x0F), n, vel], outputType);
         updateKeyboard(n, true, outputType);
     });
 }
 
 function sendNoteOffs(notes, ch, outputType = 'chord') {
     notes.forEach(n => {
-        send([0x80 | ((ch - 1) & 0x0F), n, 0], outputType);
+        send([MIDI_NOTE_OFF | ((ch - 1) & 0x0F), n, 0], outputType);
         updateKeyboard(n, false, outputType);
     });
 }
@@ -1453,7 +1536,7 @@ function updateKeyboard(note, isNoteOn, outputType = 'main') {
             Object.values(currentPianoKeys).forEach(key => key.classList.remove('active'));
 
             // Highlight current chord notes
-            const currentChord = mode === 1 ? Chords.record : Chords.string;
+            const currentChord = mode === MODE_RECORD ? Chords.record : Chords.string;
             currentChord.forEach(note => {
                 const key = currentPianoKeys[note];
                 if (key) {
