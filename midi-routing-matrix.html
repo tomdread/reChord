@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI Routing Matrix</title>
+    <style>
+        :root {
+            --cell-padding: 8px;
+            --header-bg: #f2f2f2;
+            --row-hover: #f5f5f5;
+            --highlight: #d1ffd1;
+            --border: #ddd;
+            --radius: 4px;
+            --loopback-bg: #ffe6e6;
+        }
+        body {
+            background: #f9f9f9;
+            font-family: sans-serif;
+            color: #222;
+            margin: 0;
+        }
+        #main {
+            padding: 20px;
+        }
+        .port-selection {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        .port-list {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px;
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+        }
+        .port-list h3 {
+            margin: 0 0 10px 0;
+            font-size: 1rem;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+            max-height: 150px;
+            overflow-y: auto;
+            width: 240px;
+            border: 1px solid var(--border);
+            margin: 0;
+        }
+        ul li {
+            margin: 4px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        ul li:hover {
+            background: var(--row-hover);
+        }
+        .midi-activity {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #666;
+            border-radius: 50%;
+            transition: background-color 0.1s;
+        }
+        .midi-activity.active {
+            background: #4CAF50;
+            box-shadow: 0 0 4px rgba(76,175,80,0.8);
+        }
+        .routing-table {
+            border-collapse: collapse;
+            width: 100%;
+            background: white;
+            border-radius: var(--radius);
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+        .routing-table th,
+        .routing-table td {
+            border: 1px solid var(--border);
+            padding: var(--cell-padding);
+            text-align: center;
+        }
+        .routing-table th {
+            background: var(--header-bg);
+            font-weight: bold;
+        }
+        .routing-table tr:hover td {
+            background: var(--row-hover);
+        }
+        .routing-table td.highlight {
+            background: var(--highlight) !important;
+        }
+        .connection-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #4CAF50;
+        }
+        #notification-area {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        .notification {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px 24px;
+            margin: 8px;
+            border-radius: 4px;
+            opacity: 1;
+            transition: opacity 0.5s;
+        }
+        .notification.success { border-left: 4px solid #4CAF50; }
+        .notification.info { border-left: 4px solid #2196F3; }
+        .notification.warning { border-left: 4px solid #FFC107; }
+        .notification.error { border-left: 4px solid #f44336; }
+        .loopback-cell {
+            background: var(--loopback-bg) !important;
+            opacity: 0.7;
+            border: 1px dashed #f44336;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="main">
+        <h1>MIDI Routing Matrix</h1>
+        <section class="port-selection">
+            <div class="port-list">
+                <h3>MIDI Inputs</h3>
+                <ul id="midiInputsList" role="listbox" aria-label="MIDI Input Devices"></ul>
+            </div>
+            <div class="port-list">
+                <h3>MIDI Outputs</h3>
+                <ul id="midiOutputsList" role="listbox" aria-label="MIDI Output Devices"></ul>
+            </div>
+        </section>
+        <table id="midiMatrix" class="routing-table">
+            <thead></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div id="notification-area"></div>
+
+    <script>
+        const CONFIG = {
+            DEBOUNCE_DELAY: 200,
+            ACTIVITY_TIMEOUT: 100,
+            HIGHLIGHT_DURATION: 200,
+            NOTIFICATION_DURATION: 3000,
+            STORAGE: {
+                INPUTS: 'selectedMidiInputIds',
+                OUTPUTS: 'selectedMidiOutputIds',
+                CONNECTIONS: 'midiConnections'
+            },
+            PORT_FILTER: 'network'
+        };
+
+        let midiAccessGlobal = null;
+        let allMidiInputs = [], allMidiOutputs = [];
+        let midiInputsById = {}, midiOutputsById = {};
+        let activityTimers = new Map(), debounceTimer = null;
+
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess({ sysex: true })
+                .then(initMidi)
+                .catch(err => showNotification('Failed to access MIDI', 'error'));
+        } else {
+            showNotification('Web MIDI API not supported', 'error');
+        }
+
+        function initMidi(midiAccess) {
+            midiAccessGlobal = midiAccess;
+            midiAccessGlobal.onstatechange = onStateChange;
+            clearCorruptedStorage();
+            refreshPortLists();
+            populatePortSelection();
+            restorePortSelections();
+            buildRoutingMatrix();
+            setupMidiRouting();
+            loadConnections();
+        }
+
+        function onStateChange() {
+            refreshPortLists();
+            populatePortSelection();
+            restorePortSelections();
+            buildRoutingMatrix();
+            setupMidiRouting();
+            loadConnections();
+        }
+
+        function refreshPortLists() {
+            allMidiInputs = Array.from(midiAccessGlobal.inputs.values())
+                .filter(i => !i.name.toLowerCase().includes(CONFIG.PORT_FILTER));
+            allMidiOutputs = Array.from(midiAccessGlobal.outputs.values())
+                .filter(o => !o.name.toLowerCase().includes(CONFIG.PORT_FILTER));
+            midiInputsById = {};
+            midiOutputsById = {};
+            allMidiInputs.forEach(i => midiInputsById[i.id] = i);
+            allMidiOutputs.forEach(o => midiOutputsById[o.id] = o);
+        }
+
+        function clearCorruptedStorage() {
+            try {
+                const data = localStorage.getItem(CONFIG.STORAGE.CONNECTIONS);
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    if (!Array.isArray(parsed)) localStorage.removeItem(CONFIG.STORAGE.CONNECTIONS);
+                }
+            } catch { localStorage.removeItem(CONFIG.STORAGE.CONNECTIONS); }
+        }
+
+        function populatePortSelection() {
+            const inList = document.getElementById('midiInputsList');
+            const outList = document.getElementById('midiOutputsList');
+            inList.innerHTML = '';
+            outList.innerHTML = '';
+
+            allMidiInputs.forEach(i => {
+                const li = document.createElement('li');
+                const cb = document.createElement('input');
+                const act = document.createElement('span');
+                const lbl = document.createElement('label');
+                cb.type = 'checkbox'; cb.id = `in_${i.id}`; cb.value = i.id;
+                act.className = 'midi-activity'; act.id = `act_in_${i.id}`;
+                lbl.htmlFor = cb.id; lbl.textContent = i.name;
+                cb.addEventListener('change', onPortSelectionChange);
+                li.append(cb, act, lbl);
+                inList.append(li);
+            });
+
+            allMidiOutputs.forEach(o => {
+                const li = document.createElement('li');
+                const cb = document.createElement('input');
+                const act = document.createElement('span');
+                const lbl = document.createElement('label');
+                cb.type = 'checkbox'; cb.id = `out_${o.id}`; cb.value = o.id;
+                act.className = 'midi-activity'; act.id = `act_out_${o.id}`;
+                lbl.htmlFor = cb.id; lbl.textContent = o.name;
+                cb.addEventListener('change', onPortSelectionChange);
+                li.append(cb, act, lbl);
+                outList.append(li);
+            });
+        }
+
+        function restorePortSelections() {
+            const inSel = JSON.parse(localStorage.getItem(CONFIG.STORAGE.INPUTS) || 'null');
+            const outSel = JSON.parse(localStorage.getItem(CONFIG.STORAGE.OUTPUTS) || 'null');
+            const inList = document.getElementById('midiInputsList');
+            const outList = document.getElementById('midiOutputsList');
+
+            if (Array.isArray(inSel)) {
+                inList.querySelectorAll('input').forEach(cb => cb.checked = inSel.includes(cb.value));
+            } else selectAll(inList);
+            if (Array.isArray(outSel)) {
+                outList.querySelectorAll('input').forEach(cb => cb.checked = outSel.includes(cb.value));
+            } else selectAll(outList);
+        }
+
+        function selectAll(container) {
+            container.querySelectorAll('input').forEach(cb => cb.checked = true);
+        }
+
+        function onPortSelectionChange() {
+            const inList = document.getElementById('midiInputsList');
+            const outList = document.getElementById('midiOutputsList');
+            const selIn = Array.from(inList.querySelectorAll('input:checked')).map(cb => cb.value);
+            const selOut = Array.from(outList.querySelectorAll('input:checked')).map(cb => cb.value);
+            localStorage.setItem(CONFIG.STORAGE.INPUTS, JSON.stringify(selIn));
+            localStorage.setItem(CONFIG.STORAGE.OUTPUTS, JSON.stringify(selOut));
+            buildRoutingMatrix();
+            setupMidiRouting();
+            loadConnections();
+        }
+
+        function buildRoutingMatrix() {
+            for (let i of midiAccessGlobal.inputs.values()) i.onmidimessage = null;
+            const inSel = Array.from(document.querySelectorAll('#midiInputsList input:checked')).map(cb => cb.value);
+            const outSel = Array.from(document.querySelectorAll('#midiOutputsList input:checked')).map(cb => cb.value);
+            const table = document.getElementById('midiMatrix');
+            const thead = table.querySelector('thead');
+            const tbody = table.querySelector('tbody');
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
+
+            const headerRow = document.createElement('tr');
+            headerRow.appendChild(document.createElement('th'));
+            inSel.forEach(id => {
+                const th = document.createElement('th');
+                th.textContent = midiInputsById[id].name;
+                headerRow.append(th);
+            });
+            thead.append(headerRow);
+
+            outSel.forEach(oid => {
+                const tr = document.createElement('tr');
+                const th = document.createElement('th');
+                th.textContent = midiOutputsById[oid].name;
+                tr.append(th);
+
+                inSel.forEach(iid => {
+                    const td = document.createElement('td');
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.className = 'connection-checkbox';
+                    cb.dataset.in = iid;
+                    cb.dataset.out = oid;
+                    if (iid === oid) {
+                        td.classList.add('loopback-cell');
+                        td.title = 'Loopback (disabled)';
+                        cb.disabled = true;
+                    }
+                    cb.addEventListener('change', () => {
+                        clearTimeout(debounceTimer);
+                        debounceTimer = setTimeout(saveConnections, CONFIG.DEBOUNCE_DELAY);
+                    });
+                    td.append(cb);
+                    tr.append(td);
+                });
+                tbody.append(tr);
+            });
+        }
+
+        function setupMidiRouting() {
+            const inSel = Array.from(document.querySelectorAll('#midiInputsList input:checked')).map(cb => cb.value);
+            inSel.forEach(id => {
+                const input = midiInputsById[id];
+                input.onmidimessage = evt => handleMidiMessage(evt, id);
+            });
+        }
+
+        function handleMidiMessage(event, inputId) {
+            const data = event.data;
+            flashActivity(inputId, 'in');
+            document.querySelectorAll('#midiMatrix input.connection-checkbox')
+                .forEach(cb => {
+                    if (!cb.checked || cb.dataset.in !== inputId) return;
+                    const outId = cb.dataset.out;
+                    try {
+                        midiOutputsById[outId].send(data);
+                        flashActivity(outId, 'out');
+                        const td = cb.closest('td');
+                        td.classList.add('highlight');
+                        setTimeout(() => td.classList.remove('highlight'), CONFIG.HIGHLIGHT_DURATION);
+                    } catch (e) {
+                        showNotification(`Failed to send to ${midiOutputsById[outId].name}`, 'error');
+                    }
+                });
+        }
+
+        function saveConnections() {
+            const conns = [];
+            document.querySelectorAll('#midiMatrix input.connection-checkbox').forEach(cb => {
+                if (cb.checked) conns.push({ in: cb.dataset.in, out: cb.dataset.out });
+            });
+            localStorage.setItem(CONFIG.STORAGE.CONNECTIONS, JSON.stringify(conns));
+            showNotification('Connections saved', 'success');
+        }
+
+        const debouncedSave = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(saveConnections, CONFIG.DEBOUNCE_DELAY);
+        };
+
+        function loadConnections() {
+            const saved = JSON.parse(localStorage.getItem(CONFIG.STORAGE.CONNECTIONS) || '[]');
+            document.querySelectorAll('#midiMatrix input.connection-checkbox').forEach(cb => cb.checked = false);
+            saved.forEach(({ in: iin, out: oot }) => {
+                const selector = `#midiMatrix input[data-in="${iin}"][data-out="${oot}"]`;
+                const cb = document.querySelector(selector);
+                if (cb) {
+                    cb.checked = true;
+                    cb.closest('td').classList.add('highlight');
+                }
+            });
+            showNotification('Connections loaded', 'info');
+        }
+
+        function showNotification(msg, type = 'info') {
+            const area = document.getElementById('notification-area');
+            const n = document.createElement('div');
+            n.className = `notification ${type}`;
+            n.textContent = msg;
+            area.append(n);
+            setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 500); }, CONFIG.NOTIFICATION_DURATION);
+        }
+
+        function flashActivity(id, dir) {
+            const el = document.getElementById(`act_${dir}_${id}`);
+            if (!el) return;
+            if (activityTimers.has(el)) clearTimeout(activityTimers.get(el));
+            el.classList.add('active');
+            const t = setTimeout(() => {
+                el.classList.remove('active');
+                activityTimers.delete(el);
+            }, CONFIG.ACTIVITY_TIMEOUT);
+            activityTimers.set(el, t);
+        }
+    </script>
+</body>
+
+</html>
