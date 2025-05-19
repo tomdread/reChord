@@ -3,14 +3,25 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>miDIai.org reChord 0.03.2.3.1</title>
+<title>reChord37.com reChord 0.03.2.3.1</title>
 <style>
+:root {
+    --cell-padding: 8px;
+    --header-bg: #f2f2f2;
+    --row-hover: #f5f5f5;
+    --highlight: #d1ffd1;
+    --border: #ddd;
+    --radius: 4px;
+    --loopback-bg: #ffe6e6;
+}
+
 body {
-    font-family: sans-serif;
-    margin: 2rem;
-    line-height: 1.4;
     background: #f9f9f9;
+    font-family: 'Courier New', Courier, monospace;
     color: #222;
+    margin: 0;
+    padding: 20px;
+    line-height: 1.4;
 }
 
 h1 {
@@ -44,6 +55,11 @@ code {
     flex-direction: column;
     gap: 10px;
     margin-bottom: 20px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
 }
 
 .port-label {
@@ -56,8 +72,8 @@ code {
 .port-label select {
     flex: 1;
     padding: 5px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     background: white;
 }
 
@@ -77,27 +93,145 @@ code {
 }
 
 .midi-activity {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
+    background: #666;
     border-radius: 50%;
-    background-color: #2196F3;
     opacity: 0;
-    transition: opacity 0.1s ease-in-out;
+    transition: background-color 0.1s;
 }
 
 .midi-activity.active {
+    background: #4CAF50;
     opacity: 1;
+    box-shadow: 0 0 4px rgba(76,175,80,0.8);
+}
+
+.piano-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+}
+
+.piano-section h3 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+
+.piano-container {
+    padding: 20px;
+    background: #f0f0f0;
+    border-radius: var(--radius);
+    margin: 20px 0;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.piano-key {
+    transition: all 0.1s ease;
+}
+
+.piano-key.white {
+    fill: white;
+    stroke: var(--border);
+    stroke-width: 1;
+}
+
+.piano-key.black {
+    fill: #333;
+    stroke: #000;
+    stroke-width: 1;
+}
+
+.piano-key.active {
+    fill: #4CAF50;
+    filter: drop-shadow(0 0 4px rgba(76,175,80,0.8));
+}
+
+.piano-key:hover {
+    filter: brightness(0.95);
+    cursor: pointer;
+}
+
+.key-text {
+    font-size: 8px;
+    font-family: monospace;
+    user-select: none;
+    pointer-events: none;
+}
+
+#notification-area {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+
+.notification {
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 12px 24px;
+    margin: 8px;
+    border-radius: 4px;
+    opacity: 1;
+    transition: opacity 0.5s;
+}
+
+.notification.success { border-left: 4px solid #4CAF50; }
+.notification.info { border-left: 4px solid #2196F3; }
+.notification.warning { border-left: 4px solid #FFC107; }
+.notification.error { border-left: 4px solid #f44336; }
+
+.song-controls {
+    margin: 20px 0;
+    padding: 15px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+}
+
+.song-controls textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: inherit;
+    resize: vertical;
+}
+
+.current-chord-info {
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--header-bg);
+    border-radius: var(--radius);
+    font-size: 1.1em;
+}
+
+#song-name {
+    font-weight: bold;
+    margin-bottom: 8px;
+    padding: 10px;
+    background: var(--header-bg);
+    border-radius: var(--radius);
 }
 </style>
 </head>
 <body>
-<h1>rechord37.com reChord</h1>
-<p>Actual Intelagence</p>
-
-<div id="song-name" style="font-weight: bold; margin-bottom: 8px;"></div>
-<div class="status">
-    <p>Mode: <strong><span id="mode">STOP</span></strong></p>
+<div id="main">
+    <h1 style="font-family: 'Courier New', Courier, monospace; font-weight: bold; font-size: 2.2rem; margin-bottom: 0.5rem;">rechord37.com reChord</h1>
+    <p style="font-family: 'Courier New', Courier, monospace; font-size: 1.1rem; margin-top: 0; margin-bottom: 1.2rem;">Actual Intelagence</p>
+    <div class="top-card" style="background: white; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 1px 1px 2px rgba(0,0,0,0.08); padding: 16px 18px 10px 18px; margin-bottom: 18px;">
+        <div id="song-name" style="font-family: 'Courier New', Courier, monospace; font-weight: bold; margin-bottom: 8px; background: none; padding: 0; font-size: 1.1rem;"></div>
+        <div class="status" style="margin-bottom: 0;">
+            <span style="font-family: 'Courier New', Courier, monospace; font-size: 1rem;">Mode: <strong><span id="mode"></span></strong></span>
+        </div>
+    </div>
 </div>
+<div id="notification-area"></div>
 
 <script>
 // chord-name-detector.js
@@ -224,6 +358,9 @@ const sequenceNextCC = 116;     // Next chord
 // Add pad trigger mode state
 let isPadTriggerMode = false;
 
+// Add mute state tracking after other state variables
+let isMainOutputMuted = false;
+
 // ————— MIDI Recorder Logic —————
 "use strict";
 
@@ -284,6 +421,7 @@ function trackPortState(port) {
 let db;
 const DB_NAME = 'ChordDB';
 const STORE_NAME = 'songs';
+const PORTS_STORE_NAME = 'ports';  // New store for port settings
 
 // Add octave offset state
 let fullChordOctaveOffset = 0;
@@ -460,15 +598,16 @@ if (midiPortSection) {
 
 // Notification function
 function showNotification(message, type = 'info', duration = 3000) {
-const notification = document.createElement('div');
-notification.className = `notification ${type}`;
-notification.textContent = message;
-notificationArea.appendChild(notification);
-
-setTimeout(() => {
-    notification.style.opacity = '0';
-    setTimeout(() => notification.remove(), 2000);
-}, duration);
+    const area = document.getElementById('notification-area');
+    if (!area) return;
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    area.appendChild(notification);
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 500);
+    }, duration);
 }
 
 // Add activity flash function
@@ -568,7 +707,69 @@ function updateMIDIStatus() {
     });
 }
 
-function refreshPortLists() {
+// Modify initDB to create the ports store
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 2);  // Increment version number
+        
+        request.onerror = () => {
+            showNotification('Failed to initialize storage: ' + request.error.message, 'warning');
+            reject(request.error);
+        };
+        request.onsuccess = () => {
+            db = request.result;
+            resolve();
+        };
+        
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME);
+            }
+            if (!db.objectStoreNames.contains(PORTS_STORE_NAME)) {
+                db.createObjectStore(PORTS_STORE_NAME);
+            }
+        };
+    });
+}
+
+// Add function to save port selections
+async function savePortSelections() {
+    if (!db) await initDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(PORTS_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(PORTS_STORE_NAME);
+        const portSelections = {
+            input: currentInput ? currentInput.id : null,
+            outputs: {
+                main: currentOutputs.main ? currentOutputs.main.id : null,
+                bass: currentOutputs.bass ? currentOutputs.bass.id : null,
+                chord: currentOutputs.chord ? currentOutputs.chord.id : null,
+                string: currentOutputs.string ? currentOutputs.string.id : null
+            }
+        };
+        const request = store.put(portSelections, 'current');
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+
+// Add function to load port selections
+async function loadPortSelections() {
+    if (!db) await initDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(PORTS_STORE_NAME, 'readonly');
+        const store = tx.objectStore(PORTS_STORE_NAME);
+        const request = store.get('current');
+        request.onsuccess = () => {
+            resolve(request.result);
+        };
+        request.onerror = () => reject(request.error);
+    });
+}
+
+// Modify refreshPortLists to use saved selections
+async function refreshPortLists() {
     // Get the selectors from their new locations
     const inputsSel = document.getElementById('inputs');
     const outputsSel = document.getElementById('outputs');
@@ -584,28 +785,18 @@ function refreshPortLists() {
     
     let hasInputs = false;
     let hasOutputs = false;
-    let defaultInputId = null;
-    let defaultOutputIds = {
-        main: null,
-        bass: null,
-        chord: null,
-        string: null
-    };
 
-    // Populate inputs and look for default
+    // Populate inputs
     for (let inp of midiAccess.inputs.values()) {
         hasInputs = true;
         const opt = new Option(inp.name, inp.id);
         if (currentInput && inp.id === currentInput.id) {
             opt.selected = true;
         }
-        if (inp.name === DEFAULT_INPUT_NAME) {
-            defaultInputId = inp.id;
-        }
         inputsSel.add(opt);
     }
 
-    // Populate outputs and look for defaults
+    // Populate outputs
     for (let outp of midiAccess.outputs.values()) {
         hasOutputs = true;
         const opt = new Option(outp.name, outp.id);
@@ -620,20 +811,6 @@ function refreshPortLists() {
                 selector.add(opt.cloneNode(true));
             }
         });
-        
-        // Check for default outputs
-        if (outp.name === DEFAULT_OUTPUT_NAMES.main) {
-            defaultOutputIds.main = outp.id;
-        }
-        if (outp.name === DEFAULT_OUTPUT_NAMES.bass) {
-            defaultOutputIds.bass = outp.id;
-        }
-        if (outp.name === DEFAULT_OUTPUT_NAMES.chord) {
-            defaultOutputIds.chord = outp.id;
-        }
-        if (outp.name === DEFAULT_OUTPUT_NAMES.string) {
-            defaultOutputIds.string = outp.id;
-        }
     }
 
     // Update status and UI
@@ -648,14 +825,65 @@ function refreshPortLists() {
 
     updateMIDIStatus();
 
+    // Load saved port selections
+    try {
+        const savedPorts = await loadPortSelections();
+        
+        if (savedPorts) {
+            // Restore saved selections
+            if (savedPorts.input) {
+                selectInput(savedPorts.input);
+                inputsSel.value = savedPorts.input;
+            }
+            
+            if (savedPorts.outputs) {
+                Object.entries(savedPorts.outputs).forEach(([type, id]) => {
+                    if (id) {
+                        selectOutput(type, id);
+                        const selector = document.getElementById(`${type}-outputs`);
+                        if (selector) selector.value = id;
+                    }
+                });
+            }
+        } else {
+            // First run - use defaults
+            if (hasInputs) {
+                for (let inp of midiAccess.inputs.values()) {
+                    if (inp.name === DEFAULT_INPUT_NAME) {
+                        selectInput(inp.id);
+                        inputsSel.value = inp.id;
+                        break;
+                    }
+                }
+            }
+            
+            if (hasOutputs) {
+                for (let outp of midiAccess.outputs.values()) {
+                    Object.entries(DEFAULT_OUTPUT_NAMES).forEach(([type, name]) => {
+                        if (outp.name === name) {
+                            selectOutput(type, outp.id);
+                            const selector = document.getElementById(`${type}-outputs`);
+                            if (selector) selector.value = outp.id;
+                        }
+                    });
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading port selections:', error);
+        showNotification('Error loading saved port selections', 'warning');
+    }
+
     // Port selection handlers
     inputsSel.onchange = () => {
         const selectedId = inputsSel.value;
         if (selectedId) {
             selectInput(selectedId);
+            savePortSelections();  // Save selection
             showNotification(`Connected to input: ${inputsSel.options[inputsSel.selectedIndex].text}`, 'success');
         } else {
             currentInput = null;
+            savePortSelections();  // Save selection
             showNotification('MIDI input disconnected', 'info');
         }
         updateMIDIStatus();
@@ -665,15 +893,17 @@ function refreshPortLists() {
         const selectedId = outputsSel.value;
         if (selectedId) {
             selectOutput('main', selectedId);
+            savePortSelections();  // Save selection
             showNotification(`Connected to main output: ${outputsSel.options[outputsSel.selectedIndex].text}`, 'success');
         } else {
             currentOutputs.main = null;
+            savePortSelections();  // Save selection
             showNotification('Main MIDI output disconnected', 'info');
         }
         updateMIDIStatus();
     };
 
-    // Add handlers for the new output selectors
+    // Add handlers for the other output selectors
     ['bass', 'chord', 'string'].forEach(type => {
         const selector = document.getElementById(`${type}-outputs`);
         if (selector) {
@@ -681,40 +911,17 @@ function refreshPortLists() {
                 const selectedId = selector.value;
                 if (selectedId) {
                     selectOutput(type, selectedId);
+                    savePortSelections();  // Save selection
                     showNotification(`Connected to ${type} output: ${selector.options[selector.selectedIndex].text}`, 'success');
                 } else {
                     currentOutputs[type] = null;
+                    savePortSelections();  // Save selection
                     showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} MIDI output disconnected`, 'info');
                 }
                 updateMIDIStatus();
             };
         }
     });
-
-    // Auto-select default ports if available
-    if (!currentInput && hasInputs) {
-        if (defaultInputId) {
-            selectInput(inputsSel.value = defaultInputId);
-        } else {
-            selectInput(inputsSel.value = inputsSel.options[1].value);
-        }
-    }
-    
-    if (hasOutputs) {
-        // Set main output
-        if (defaultOutputIds.main) {
-            selectOutput('main', outputsSel.value = defaultOutputIds.main);
-        }
-        
-        // Set other outputs
-        ['bass', 'chord', 'string'].forEach(type => {
-            const selector = document.getElementById(`${type}-outputs`);
-            if (selector && defaultOutputIds[type]) {
-                selector.value = defaultOutputIds[type];
-                selectOutput(type, defaultOutputIds[type]);
-            }
-        });
-    }
 }
 
 function selectInput(id) {
@@ -735,7 +942,7 @@ function selectInput(id) {
             // Update the main piano section title
             const mainPianoSection = document.querySelector('#main-piano').parentElement;
             if (mainPianoSection) {
-                mainPianoSection.querySelector('h3').textContent = currentInput.name;
+                mainPianoSection.querySelector('h3').textContent = 'Controller: ' + currentInput.name;
             }
         }
     }
@@ -948,9 +1155,10 @@ buttonManager.registerButton(recordCC, {
             isWaitingForStorageKey = false;
         } else if (duration < buttonManager.HOLD_THRESHOLD && !isRecordingSequence) {
             mode = MODE_RECORD;
+            isMainOutputMuted = false;
             Chords.record = [];
             updateStatus();
-            showNotification('Recording Mode Activated', 'info');
+            showNotification('Recording Mode Activated - Main output unmuted', 'info');
         } else if (isRecordingSequence) {
             isRecordingSequence = false;
             if (Chords.sequence.length > 0) {
@@ -960,8 +1168,9 @@ buttonManager.registerButton(recordCC, {
                 showNotification('No chords recorded in sequence', 'warning');
             }
             mode = MODE_PLAY;
+            isMainOutputMuted = true;
             updateStatus();
-            showNotification('Play Mode Activated', 'info');
+            showNotification('Play Mode Activated - Main output muted', 'info');
         }
     },
     onHold: () => {
@@ -976,16 +1185,18 @@ buttonManager.registerButton(recordCC, {
 buttonManager.registerButton(playCC, {
     onPress: () => {
         mode = MODE_PLAY;
+        isMainOutputMuted = true;
         updateStatus();
-        showNotification('Play Mode Activated', 'info');
+        showNotification('Play Mode Activated - Main output muted', 'info');
     }
 });
 
 buttonManager.registerButton(stopCC, {
     onPress: () => {
         mode = MODE_STOP;
+        isMainOutputMuted = false;
         updateStatus();
-        showNotification('Stop Mode Activated', 'info');
+        showNotification('Stop Mode Activated - Main output unmuted', 'info');
     }
 });
 
@@ -1361,6 +1572,12 @@ function handleMIDIMessage(ev) {
 function send(data, outputType = 'main') {
     const output = currentOutputs[outputType];
     if (!output) return;
+    
+    // Mute main output in play mode
+    if (outputType === 'main' && mode === MODE_PLAY) {
+        return;
+    }
+    
     try {
         // Ensure note-off messages have velocity 0
         if ((data[0] & 0xF0) === MIDI_NOTE_OFF) {
@@ -1398,10 +1615,10 @@ function sendNoteOffs(notes, ch, outputType = 'chord') {
 function createPianoSections() {
     const sections = {
         current: { title: 'Current Chord', id: 'current-piano' },
-        main: { title: 'MIDI Input', id: 'main-piano' },
-        bass: { title: 'Bass Output', id: 'bass-piano' },
         chord: { title: 'Chord Output', id: 'chord-piano' },
-        string: { title: 'String Output', id: 'string-piano' }
+        bass: { title: 'Bass Output', id: 'bass-piano' },
+        string: { title: 'String Output', id: 'string-piano' },
+        main: { title: 'MIDI Input', id: 'main-piano' }
     };
 
     // Create container for all piano sections
@@ -1409,13 +1626,14 @@ function createPianoSections() {
     pianoSectionsContainer.id = 'piano-sections';
     document.body.appendChild(pianoSectionsContainer);
 
-    // Create each piano section
-    Object.entries(sections).forEach(([type, info]) => {
+    // Create each piano section in the specified order
+    ['current', 'chord', 'bass', 'string', 'main'].forEach(type => {
+        const info = sections[type];
         const section = document.createElement('div');
         section.className = 'piano-section';
         
         // Section title
-        section.innerHTML = `<h3>${type === 'main' ? (currentInput ? currentInput.name : 'MIDI Input') : info.title}</h3>`;
+        section.innerHTML = `<h3>${type === 'main' ? 'Controller: ' + (currentInput ? currentInput.name : 'MIDI Input') : info.title}</h3>`;
         
         const pianoContainer = document.createElement('div');
         pianoContainer.className = 'piano-container';
@@ -1648,29 +1866,6 @@ function countWhiteKeys(startNote, endNote) {
         }
     }
     return count;
-}
-
-// Initialize IndexedDB
-function initDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, 1);
-        
-        request.onerror = () => {
-            showNotification('Failed to initialize storage: ' + request.error.message, 'warning');
-            reject(request.error);
-        };
-        request.onsuccess = () => {
-            db = request.result;
-            resolve();
-        };
-        
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-                db.createObjectStore(STORE_NAME);
-            }
-        };
-    });
 }
 
 // Get song name from hash

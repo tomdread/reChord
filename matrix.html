@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MIDI Routing Matrix</title>
+    <title>reChord37.com Matrix</title>
     <style>
         :root {
             --cell-padding: 8px;
@@ -17,7 +17,7 @@
         }
         body {
             background: #f9f9f9;
-            font-family: sans-serif;
+            font-family: 'Courier New', Courier, monospace;
             color: #222;
             margin: 0;
         }
@@ -130,7 +130,8 @@
 
 <body>
     <div id="main">
-        <h1>MIDI Routing Matrix</h1>
+        <h1>rechord37.com Matrix</h1>
+        <p>Actual Intelagence</p>
         <section class="port-selection">
             <div class="port-list">
                 <h3>MIDI Inputs</h3>
@@ -313,7 +314,7 @@
                     cb.className = 'connection-checkbox';
                     cb.dataset.in = iid;
                     cb.dataset.out = oid;
-                    if (iid === oid) {
+                    if (midiInputsById[iid].name === midiOutputsById[oid].name) {
                         td.classList.add('loopback-cell');
                         td.title = 'Loopback (disabled)';
                         cb.disabled = true;
