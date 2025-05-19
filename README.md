@@ -86,3 +86,24 @@ Current version: 0.03.2.3
 
 Private - All Rights Reserved
 This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
+
+
+## Upgrade Chord storage system to 8 switch's  
+
+Bank A
+00001000
+10001000
+11001000
+11101000
+11111000
+
+Bank B
+00000100
+10000100
+11000100
+11100100
+11110100
+
+etc
+
+can you finish that and order the cards like so
