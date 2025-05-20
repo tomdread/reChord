@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Switch Combinations Viewer (Enhanced)</title>
+<style>
+  :root {
+    --card-radius-css: 3px;
+    --card-font-size-css: 0.44rem;
+    --highlight-color: gold;
+    --selected-color: dodgerblue;
+    --focus-color: #2196f3;
+    --border-color: #ccc;
+  }
+  html, body { margin:0; padding:0; height:100%; font-family:sans-serif; background:#f0f0f0; color:#333; line-height:1.4; }
+  *, *::before, *::after { box-sizing:border-box; }
+  #main-container { padding:15px; display:flex; flex-direction:column; align-items:center; }
+  
+  .controls-panel {
+    background: white; padding: 10px 15px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    margin-bottom: 15px; display: flex; align-items: center; gap: 20px;
+  }
+  .controls-panel label { font-weight: bold; margin-right: 5px; }
+  .controls-panel select { padding: 5px; border-radius: 3px; border: 1px solid var(--border-color); min-width: 200px; }
+
+  .grid-wrap {
+    display: grid; grid-template-columns:repeat(16, 1fr); grid-template-rows:repeat(16, 1fr);
+    gap: 3px; width:min(90vw, 85vh); height:min(90vw, 85vh); margin:0 auto;
+  }
+  .combo {
+    display:flex; flex-direction:column; justify-content:space-between; align-items:center;
+    background:white; border:1px solid var(--border-color); border-radius:var(--card-radius-css);
+    width:100%; height:100%; min-width:0; min-height:0; text-align:center;
+    box-shadow:1px 1px 2px rgba(0,0,0,0.08);
+    transition:transform 0.1s ease-out, box-shadow 0.1s ease-out, border-color 0.1s ease-out;
+    font-size:var(--card-font-size-css); padding:2px; outline:none; cursor:pointer; overflow:hidden;
+    position: relative; /* For selected indicator */
+  }
+  .combo.selected {
+    border-color: var(--selected-color);
+    box-shadow: 0 0 6px var(--selected-color);
+    /* outline: 2px solid var(--selected-color); outline-offset: -2px; */
+  }
+  .combo.has-custom-chord::after { /* Indicator for cards with custom chords */
+    content: "♪";
+    position: absolute;
+    top: 1px;
+    right: 2px;
+    font-size: 0.6rem;
+    color: var(--selected-color);
+    opacity: 0.7;
+  }
+  .combo:hover, .combo.highlight { transform:scale(1.08); box-shadow:0 0 8px var(--highlight-color); border-color:var(--highlight-color); z-index:10; }
+  .combo:focus { outline:2px solid var(--focus-color); outline-offset:1px; z-index:10; }
+  .combo-svg { flex-grow:1; width:100%; display:block; margin:0 auto; }
+  .combo-num { flex-shrink:0; width:100%; text-align:center; font-size:0.65rem; font-weight:bold; margin-top:1px; line-height:1; color:#333; }
+  
+  .default-pattern-label {
+    position:absolute; top:1px; left:50%; transform:translateX(-50%); background:#555; color:white;
+    padding:0px 3px; border-radius:3px; font-size:0.5rem; z-index:5; opacity:0.7;
+  }
+
+  /* Chord Editor Modal */
+  .modal {
+    display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%;
+    overflow: auto; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center;
+  }
+  .modal-content {
+    background-color: #fff; margin: auto; padding: 20px; border: 1px solid #888;
+    width: 80%; max-width: 400px; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  }
+  .modal-content h3 { margin-top: 0; }
+  .modal-content label { display: block; margin-bottom: 5px; font-weight: bold; }
+  .modal-content input[type="text"] { width: calc(100% - 12px); padding: 6px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 3px;}
+  .modal-buttons button { padding: 8px 15px; margin-right: 10px; border: none; border-radius: 3px; cursor: pointer; }
+  .modal-buttons .save { background-color: #4CAF50; color: white; }
+  .modal-buttons .cancel { background-color: #f44336; color: white; }
+  .modal-buttons .delete { background-color: #aaa; color: white; }
+  #notification-area { position:fixed; bottom:10px; right:10px; z-index:1001; }
+  .notification { background:rgba(0,0,0,0.8); color:white; padding:10px 15px; margin-top:5px; border-radius:4px; opacity:1; transition:opacity 0.5s; font-size:0.9rem;}
+
+</style>
+</head>
+<body>
+
+<div id="main-container">
+  <div class="controls-panel">
+    <label for="midiInputSelect">MIDI Input:</label>
+    <select id="midiInputSelect"></select>
+  </div>
+
+  <div id="patternGrid" class="grid-wrap" role="grid" aria-label="Switch Combination Patterns">
+    <!-- JS will populate this -->
+  </div>
+</div>
+
+<!-- Chord Editor Modal -->
+<div id="chordEditorModal" class="modal">
+  <div class="modal-content">
+    <h3>Edit Chord for Pattern <span id="modalPatternNum"></span></h3>
+    <p>Pattern: <code id="modalPatternBin"></code></p>
+    <label for="chordVoicingInput">Chord Voicing (MIDI notes, space separated):</label>
+    <input type="text" id="chordVoicingInput" placeholder="e.g., 48 52 55 60">
+    <div class="modal-buttons">
+      <button id="saveChordButton" class="save">Save Chord</button>
+      <button id="deleteChordButton" class="delete">Delete Chord</button>
+      <button id="cancelChordEditButton" class="cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<div id="notification-area"></div>
+
+<script>
+const CONFIG = {
+  svg: {
+    patternGridSize: 4, svgViewBoxWidth: 24, svgViewBoxHeight: 18,
+    patternCellSize: 4, patternCellGap: 0.5, patternTopPadding: 1,
+  },
+  display: { numSwitches: 8, gridColsDisplay: 16, showDefaultLabel: true },
+  midi: {
+    noteToSwitchMap: { 49:0, 51:1, 54:2, 56:3, 50:4, 52:5, 53:6, 55:7 },
+    defaultInputName: "MPK mini Plus Port 1",
+    localStorageKey: "selectedMidiInputId_SwitchViewer_v1"
+  },
+  db: {
+    name: "SwitchViewerDB", version: 1, storeName: "CardData",
+    defaultChordVoicing: [48, 52, 55, 60, 64, 67] // C3 E3 G3 C4 E4 G4
+  },
+  highlightTimeoutDuration: 300
+};
+
+const AppState = {
+  switchStates: Array(CONFIG.display.numSwitches).fill(false),
+  highlightClearTimeout: null,
+  midiAccess: null,
+  currentMidiInput: null,
+  db: null,
+  currentlyEditingPattern: null // Stores the decimal value of the pattern being edited
+};
+
+// --- DOM Elements ---
+const DOMElements = {
+  patternGrid: () => document.getElementById('patternGrid'),
+  midiInputSelect: () => document.getElementById('midiInputSelect'),
+  chordEditorModal: () => document.getElementById('chordEditorModal'),
+  modalPatternNum: () => document.getElementById('modalPatternNum'),
+  modalPatternBin: () => document.getElementById('modalPatternBin'),
+  chordVoicingInput: () => document.getElementById('chordVoicingInput'),
+  saveChordButton: () => document.getElementById('saveChordButton'),
+  deleteChordButton: () => document.getElementById('deleteChordButton'),
+  cancelChordEditButton: () => document.getElementById('cancelChordEditButton'),
+  notificationArea: () => document.getElementById('notification-area'),
+};
+
+// --- IndexedDB Utilities ---
+async function initDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(CONFIG.db.name, CONFIG.db.version);
+    request.onupgradeneeded = event => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(CONFIG.db.storeName)) {
+        db.createObjectStore(CONFIG.db.storeName, { keyPath: 'patternDecimal' });
+      }
+    };
+    request.onsuccess = event => { AppState.db = event.target.result; resolve(AppState.db); };
+    request.onerror = event => { console.error("DB Error:", event.target.errorCode); reject(event.target.errorCode); };
+  });
+}
+
+async function getCardData(patternDecimal) {
+  if (!AppState.db) return null;
+  return new Promise((resolve, reject) => {
+    const transaction = AppState.db.transaction([CONFIG.db.storeName], 'readonly');
+    const store = transaction.objectStore(CONFIG.db.storeName);
+    const request = store.get(patternDecimal);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = (event) => { console.error("Get Card Error:", event.target.error); resolve(null); /* Resolve null on error */ };
+  });
+}
+
+async function saveCardData(patternDecimal, chordVoicingArray, isSelected = true) {
+  if (!AppState.db) return;
+  return new Promise((resolve, reject) => {
+    const transaction = AppState.db.transaction([CONFIG.db.storeName], 'readwrite');
+    const store = transaction.objectStore(CONFIG.db.storeName);
+    // Ensure chordVoicingArray is an array of numbers
+    const validChordVoicing = Array.isArray(chordVoicingArray) && chordVoicingArray.every(n => typeof n === 'number') 
+                               ? chordVoicingArray 
+                               : (patternDecimal === 0 ? CONFIG.db.defaultChordVoicing : []);
+
+    const data = { patternDecimal, chordVoicing: validChordVoicing, selected: isSelected };
+    const request = store.put(data);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = (event) => { console.error("Save Card Error:", event.target.error); reject(event.target.error); };
+  });
+}
+
+async function deleteCardData(patternDecimal) {
+    if (!AppState.db) return;
+    return new Promise((resolve, reject) => {
+        const transaction = AppState.db.transaction([CONFIG.db.storeName], 'readwrite');
+        const store = transaction.objectStore(CONFIG.db.storeName);
+        // We can just delete it. If it's re-selected, it will be re-added.
+        // Or, update its 'selected' and 'chordVoicing' fields. For simplicity, let's just delete.
+        const request = store.delete(patternDecimal);
+        request.onsuccess = () => resolve();
+        request.onerror = (event) => { console.error("Delete Card Error:", event.target.error); reject(event.target.error); };
+    });
+}
+
+
+// --- UI & Grid Drawing ---
+function createComboCard(binaryPattern, decimalValue, targetGridElement) {
+  const cardDiv = document.createElement('div');
+  cardDiv.className = 'combo';
+  cardDiv.dataset.pattern = binaryPattern;
+  cardDiv.dataset.decimal = decimalValue;
+  cardDiv.setAttribute('title', `Pattern ${decimalValue.toString().padStart(3, '0')}: ${binaryPattern}`);
+  cardDiv.setAttribute('aria-label', `Pattern ${decimalValue.toString().padStart(3, '0')}: ${binaryPattern}`);
+  cardDiv.setAttribute('tabindex', '0');
+  cardDiv.setAttribute('role', 'gridcell');
+
+  const { patternGridSize, svgViewBoxWidth, svgViewBoxHeight, patternCellSize, patternCellGap, patternTopPadding } = CONFIG.svg;
+  const totalPatternWidth = (patternCellSize * patternGridSize) + (patternCellGap * (patternGridSize - 1));
+  const totalPatternHeight = (patternCellSize * Math.ceil(CONFIG.display.numSwitches / patternGridSize)) + (patternCellGap * (Math.ceil(CONFIG.display.numSwitches / patternGridSize) -1));
+  const offsetX = (svgViewBoxWidth - totalPatternWidth) / 2;
+  const offsetY = patternTopPadding;
+
+  const svgElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svgElement.classList.add('combo-svg');
+  svgElement.setAttribute('viewBox', `0 0 ${svgViewBoxWidth} ${svgViewBoxHeight}`);
+
+  binaryPattern.split('').forEach((state, index) => {
+    const row = Math.floor(index / patternGridSize); const col = index % patternGridSize;
+    const cellRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    cellRect.setAttribute('x', offsetX + col * (patternCellSize + patternCellGap));
+    cellRect.setAttribute('y', offsetY + row * (patternCellSize + patternCellGap));
+    cellRect.setAttribute('width', patternCellSize); cellRect.setAttribute('height', patternCellSize);
+    cellRect.setAttribute('rx', '1'); cellRect.setAttribute('ry', '1');
+    const isActive = state === '1', isFirstHalf = index < (CONFIG.display.numSwitches / 2);
+    if (isActive) { cellRect.setAttribute('fill', isFirstHalf ? 'red' : 'black'); cellRect.setAttribute('opacity', '1'); }
+    else { cellRect.setAttribute('fill', isFirstHalf ? 'red' : 'black'); cellRect.setAttribute('opacity', isFirstHalf ? '0.18' : '0.10');}
+    svgElement.appendChild(cellRect);
+  });
+  cardDiv.appendChild(svgElement);
+
+  const numberDiv = document.createElement('div');
+  numberDiv.className = 'combo-num';
+  numberDiv.textContent = decimalValue.toString().padStart(3, '0');
+  cardDiv.appendChild(numberDiv);
+  
+  if (CONFIG.display.showDefaultLabel && decimalValue === 0) {
+    const defaultLabel = document.createElement('span');
+    defaultLabel.className = 'default-pattern-label'; defaultLabel.textContent = 'Default';
+    cardDiv.appendChild(defaultLabel);
+  }
+
+  cardDiv.addEventListener('click', () => handleCardClick(decimalValue, binaryPattern));
+  cardDiv.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') handleCardClick(decimalValue, binaryPattern); });
+
+  targetGridElement.appendChild(cardDiv);
+  return cardDiv;
+}
+
+async function generateDisplayGridsAndApplyData() {
+  const gridContainer = DOMElements.patternGrid();
+  gridContainer.innerHTML = '';
+  const totalPatterns = 1 << CONFIG.display.numSwitches;
+
+  for (let i = 0; i < totalPatterns; i++) {
+    const binaryPattern = i.toString(2).padStart(CONFIG.display.numSwitches, '0');
+    const cardElement = createComboCard(binaryPattern, i, gridContainer);
+    const cardData = await getCardData(i);
+    if (cardData) {
+      if (cardData.selected) cardElement.classList.add('selected');
+      if (cardData.chordVoicing && cardData.chordVoicing.length > 0 && 
+          !(i === 0 && JSON.stringify(cardData.chordVoicing) === JSON.stringify(CONFIG.db.defaultChordVoicing))) {
+          cardElement.classList.add('has-custom-chord');
+      }
+    } else if (i === 0) { // Ensure default chord for pattern 0 if not in DB
+        await saveCardData(0, CONFIG.db.defaultChordVoicing, false); // Save default, not selected by default
+    }
+  }
+}
+
+// --- Chord Editor Modal ---
+function openChordEditor(patternDecimal, binaryPattern) {
+  AppState.currentlyEditingPattern = patternDecimal;
+  DOMElements.modalPatternNum().textContent = patternDecimal.toString().padStart(3, '0');
+  DOMElements.modalPatternBin().textContent = binaryPattern;
+  
+  getCardData(patternDecimal).then(data => {
+    let voicingToShow = CONFIG.db.defaultChordVoicing; // Default for pattern 0
+    if (patternDecimal !== 0 && data && data.chordVoicing) {
+        voicingToShow = data.chordVoicing;
+    } else if (patternDecimal === 0) { // For pattern 0, always start with its specific default or saved
+        voicingToShow = (data && data.chordVoicing) ? data.chordVoicing : CONFIG.db.defaultChordVoicing;
+    } else {
+        voicingToShow = []; // Empty for other new cards
+    }
+    DOMElements.chordVoicingInput().value = voicingToShow.join(' ');
+    DOMElements.chordEditorModal().style.display = 'flex';
+    DOMElements.chordVoicingInput().focus();
+  });
+}
+
+function closeChordEditor() {
+  DOMElements.chordEditorModal().style.display = 'none';
+  AppState.currentlyEditingPattern = null;
+  // Focus back to the card if possible
+  const activeCardDecimal = AppState.switchStates.reduce((acc, val, idx) => acc + (val ? (1 << (CONFIG.display.numSwitches - 1 - idx)) : 0), 0); // This might not be right for current pattern
+  const cardToFocus = DOMElements.patternGrid().querySelector(`.combo[data-decimal="${AppState.currentlyEditingPattern}"]`); // Use the one that was edited
+  if (cardToFocus) cardToFocus.focus();
+}
+
+async function handleSaveChord() {
+  if (AppState.currentlyEditingPattern === null) return;
+  const voicingString = DOMElements.chordVoicingInput().value.trim();
+  const chordVoicingArray = voicingString === "" ? [] : voicingString.split(/\s+/).map(Number).filter(n => !isNaN(n) && n >= 0 && n <= 127);
+
+  await saveCardData(AppState.currentlyEditingPattern, chordVoicingArray, true); // Saving also marks as selected
+  showNotification(`Chord saved for pattern ${AppState.currentlyEditingPattern}`, 'success');
+  
+  // Update card UI
+  const cardElement = DOMElements.patternGrid().querySelector(`.combo[data-decimal="${AppState.currentlyEditingPattern}"]`);
+  if (cardElement) {
+      cardElement.classList.add('selected');
+      if (chordVoicingArray.length > 0 && 
+          !(AppState.currentlyEditingPattern === 0 && JSON.stringify(chordVoicingArray) === JSON.stringify(CONFIG.db.defaultChordVoicing))) {
+          cardElement.classList.add('has-custom-chord');
+      } else {
+          cardElement.classList.remove('has-custom-chord');
+      }
+  }
+  closeChordEditor();
+}
+async function handleDeleteChord() {
+    if (AppState.currentlyEditingPattern === null) return;
+    // For "delete", we might mean unselect and clear custom voicing, or truly remove from DB.
+    // Let's unselect and set chord to empty (or default for pattern 0).
+    const isPatternZero = AppState.currentlyEditingPattern === 0;
+    const chordToSet = isPatternZero ? CONFIG.db.defaultChordVoicing : [];
+    
+    await saveCardData(AppState.currentlyEditingPattern, chordToSet, false); // Save with new voicing, unselected
+    showNotification(`Chord data cleared for pattern ${AppState.currentlyEditingPattern}`, 'info');
+
+    const cardElement = DOMElements.patternGrid().querySelector(`.combo[data-decimal="${AppState.currentlyEditingPattern}"]`);
+    if (cardElement) {
+        cardElement.classList.remove('selected');
+        cardElement.classList.remove('has-custom-chord'); // Will be re-evaluated by generateDisplayGrids or manually here
+         if (isPatternZero && JSON.stringify(chordToSet) === JSON.stringify(CONFIG.db.defaultChordVoicing)) {
+            // It's pattern 0 with default chord, so no 'has-custom-chord'
+        } else if (chordToSet.length > 0) {
+            cardElement.classList.add('has-custom-chord');
+        }
+    }
+    closeChordEditor();
+}
+
+
+// --- Card Interaction ---
+function handleCardClick(patternDecimal, binaryPattern) {
+  // Toggle 'selected' state in UI and DB
+  const cardElement = DOMElements.patternGrid().querySelector(`.combo[data-decimal="${patternDecimal}"]`);
+  if (!cardElement) return;
+
+  // Open editor regardless of current selected state, to allow editing
+  openChordEditor(patternDecimal, binaryPattern);
+
+  // Highlight the clicked card (from MIDI interaction part)
+  AppState.switchStates = binaryPattern.split('').map(s => s === '1');
+  updateActivePatternDisplay(); // This will highlight based on AppState.switchStates
+}
+
+
+// --- MIDI Handling & Highlighting ---
+function updateActivePatternDisplay() {
+  const currentPattern = AppState.switchStates.map(s => (s ? '1' : '0')).join('');
+  highlightCardByPattern(currentPattern);
+}
+function highlightCardByPattern(patternToHighlight) {
+  if (AppState.highlightClearTimeout) clearTimeout(AppState.highlightClearTimeout);
+  document.querySelectorAll('.combo').forEach(card => {
+    card.classList.toggle('highlight', card.dataset.pattern === patternToHighlight);
+  });
+  if (patternToHighlight === '0'.repeat(CONFIG.display.numSwitches)) {
+    AppState.highlightClearTimeout = setTimeout(() => {
+      const zeroCard = document.querySelector(`.combo[data-pattern="${'0'.repeat(CONFIG.display.numSwitches)}"]`);
+      if (zeroCard) zeroCard.classList.remove('highlight');
+    }, CONFIG.highlightTimeoutDuration);
+  }
+}
+function onMIDIMessage(event) {
+  const [command, note, velocity] = event.data;
+  const isNoteOn = (command >= 0x90 && command <= 0x9F && velocity > 0);
+  const isNoteOff = (command >= 0x80 && command <= 0x8F) || (command >= 0x90 && command <= 0x9F && velocity === 0);
+  if (isNoteOn) {
+    const switchIndex = CONFIG.midi.noteToSwitchMap[note];
+    if (switchIndex !== undefined) { AppState.switchStates[switchIndex] = true; updateActivePatternDisplay(); }
+  } else if (isNoteOff) {
+    const switchIndex = CONFIG.midi.noteToSwitchMap[note];
+    if (switchIndex !== undefined) { AppState.switchStates[switchIndex] = false; updateActivePatternDisplay(); }
+  }
+}
+async function populateMidiInputSelector() {
+  const selectEl = DOMElements.midiInputSelect();
+  selectEl.innerHTML = '<option value="">Select MIDI Input...</option>';
+  if (!AppState.midiAccess) return;
+  const inputs = Array.from(AppState.midiAccess.inputs.values());
+  if (inputs.length === 0) {
+    selectEl.innerHTML = '<option value="">No MIDI Inputs Found</option>';
+    return;
+  }
+  inputs.forEach(input => {
+    const option = document.createElement('option');
+    option.value = input.id; option.textContent = input.name;
+    selectEl.appendChild(option);
+  });
+  const savedInputId = localStorage.getItem(CONFIG.midi.localStorageKey);
+  if (savedInputId && inputs.find(i => i.id === savedInputId)) {
+    selectEl.value = savedInputId;
+  } else if (inputs.find(i => i.name === CONFIG.midi.defaultInputName)) {
+    selectEl.value = inputs.find(i => i.name === CONFIG.midi.defaultInputName).id;
+  } else if (inputs.length > 0) {
+    selectEl.value = inputs[0].id; // Fallback to first
+  }
+  await setupMidiInputListener(selectEl.value); // Setup listener for initially selected/default
+  selectEl.addEventListener('change', (e) => setupMidiInputListener(e.target.value));
+}
+async function setupMidiInputListener(inputId) {
+  if (AppState.currentMidiInput) AppState.currentMidiInput.onmidimessage = null; // Clear old listener
+  if (!inputId || !AppState.midiAccess) { AppState.currentMidiInput = null; return; }
+  AppState.currentMidiInput = AppState.midiAccess.inputs.get(inputId);
+  if (AppState.currentMidiInput) {
+    AppState.currentMidiInput.onmidimessage = onMIDIMessage;
+    localStorage.setItem(CONFIG.midi.localStorageKey, inputId);
+    showNotification(`MIDI Input: ${AppState.currentMidiInput.name}`, 'info');
+  } else {
+    showNotification(`Selected MIDI input not found.`, 'warning');
+    localStorage.removeItem(CONFIG.midi.localStorageKey);
+  }
+}
+async function initializeMIDI() {
+  try {
+    if (!navigator.requestMIDIAccess) { showNotification("Web MIDI not supported.", "warning"); return; }
+    AppState.midiAccess = await navigator.requestMIDIAccess();
+    await populateMidiInputSelector();
+    AppState.midiAccess.onstatechange = async (event) => {
+      showNotification(`MIDI state change: ${event.port.name} (${event.port.state})`, 'info');
+      await populateMidiInputSelector(); // Re-populate and re-select
+    };
+  } catch (error) { console.error('MIDI Init Error:', error); showNotification("Failed to initialize MIDI.", "error"); }
+}
+
+// --- Keyboard Navigation ---
+function initializeKeyboardNavigation() {
+    const gridContainer = DOMElements.patternGrid();
+    gridContainer.addEventListener('keydown', (event) => {
+        const activeEl = document.activeElement;
+        if (!activeEl || !activeEl.classList.contains('combo')) {
+            if ((event.key === 'Tab' && !event.shiftKey) || event.key === 'Enter') {
+                const firstCard = gridContainer.querySelector('.combo'); if(firstCard) firstCard.focus();
+            } return;
+        }
+        const allCards = Array.from(gridContainer.querySelectorAll('.combo'));
+        const currentIndex = allCards.indexOf(activeEl);
+        let targetIndex = -1;
+        const cols = CONFIG.display.gridColsDisplay;
+
+        switch (event.key) {
+            case 'ArrowUp': targetIndex = currentIndex - cols; break;
+            case 'ArrowDown': targetIndex = currentIndex + cols; break;
+            case 'ArrowLeft': targetIndex = (currentIndex % cols === 0) ? -1 : currentIndex - 1; break;
+            case 'ArrowRight': targetIndex = ((currentIndex + 1) % cols === 0 && currentIndex !== allCards.length -1) ? currentIndex + 1 : ( (currentIndex + 1) % cols === 0 ? -1 : currentIndex + 1); if(targetIndex === allCards.length && (currentIndex+1)%cols !== 0) targetIndex = -1; break; // complex right arrow
+            case 'Home': targetIndex = 0; break;
+            case 'End': targetIndex = allCards.length - 1; break;
+            default: return;
+        }
+        if (targetIndex >= 0 && targetIndex < allCards.length) { allCards[targetIndex].focus(); event.preventDefault(); }
+    });
+}
+// Simplified ArrowRight logic for keyboard navigation
+function refinedKeyboardNavigation() {
+    const gridContainer = DOMElements.patternGrid();
+    gridContainer.addEventListener('keydown', (event) => {
+        const activeEl = document.activeElement;
+        if (!activeEl || !activeEl.classList.contains('combo')) {
+             if ((event.key === 'Tab' && !event.shiftKey) || event.key === 'Enter') { // Allow Tab to enter grid
+                const firstCard = gridContainer.querySelector('.combo'); if(firstCard) firstCard.focus();
+            }
+            return;
+        }
+        
+        const allCards = Array.from(gridContainer.querySelectorAll('.combo'));
+        const currentIndex = allCards.indexOf(activeEl);
+        let targetIndex = currentIndex; // Default to current if no move
+        const cols = CONFIG.display.gridColsDisplay;
+
+        switch (event.key) {
+            case 'ArrowUp':     targetIndex = Math.max(0, currentIndex - cols); break;
+            case 'ArrowDown':   targetIndex = Math.min(allCards.length - 1, currentIndex + cols); break;
+            case 'ArrowLeft':   targetIndex = (currentIndex % cols !== 0) ? currentIndex - 1 : currentIndex; break;
+            case 'ArrowRight':  targetIndex = ((currentIndex + 1) % cols !== 0 && currentIndex < allCards.length -1) ? currentIndex + 1 : currentIndex; break;
+            case 'Home':        targetIndex = 0; break;
+            case 'End':         targetIndex = allCards.length - 1; break;
+            case 'PageUp':      targetIndex = Math.max(0, currentIndex - cols * 4); break; // Example: jump 4 rows
+            case 'PageDown':    targetIndex = Math.min(allCards.length - 1, currentIndex + cols * 4); break;
+            default: return; // Don't preventDefault for other keys (like Enter/Space for click handlers)
+        }
+
+        if (targetIndex !== currentIndex && targetIndex >= 0 && targetIndex < allCards.length) {
+            allCards[targetIndex].focus();
+            event.preventDefault(); 
+        }
+    });
+}
+
+
+// --- Notification Util ---
+function showNotification(message, type = 'info', duration = 3000) {
+    const area = DOMElements.notificationArea();
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    area.appendChild(notification);
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 500);
+    }, duration);
+}
+
+// --- Initialization ---
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await initDB();
+    await initializeMIDI(); // This will also populate selector
+    await generateDisplayGridsAndApplyData(); // Generate grid and load DB data onto cards
+    // initializeKeyboardNavigation();
+    refinedKeyboardNavigation(); // Use the more robust one
+
+    DOMElements.saveChordButton().addEventListener('click', handleSaveChord);
+    DOMElements.deleteChordButton().addEventListener('click', handleDeleteChord);
+    DOMElements.cancelChordEditButton().addEventListener('click', closeChordEditor);
+    
+    // Close modal on Escape key
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && DOMElements.chordEditorModal().style.display === 'flex') {
+            closeChordEditor();
+        }
+    });
+    // Close modal if clicking outside content
+     DOMElements.chordEditorModal().addEventListener('click', (e) => {
+        if (e.target === DOMElements.chordEditorModal()) { // Clicked on modal backdrop
+            closeChordEditor();
+        }
+    });
+
+
+  } catch (error) {
+    console.error("Initialization failed:", error);
+    showNotification("Application failed to initialize fully.", "error");
+  }
+});
+
+</script>
+</body>
+</html>
