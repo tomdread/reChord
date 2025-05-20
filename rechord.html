@@ -543,6 +543,8 @@ function applyVelocityTilt(chordNotes, cc75value) {
             // Reset tilt when knob is in center position
             tiltAmount = 0.0;
         }
+        // Update tilt display when tilt amount changes
+        updateTiltDisplay();
     }
     
     // Sort notes by pitch
@@ -1851,8 +1853,8 @@ function sendChord(notes, vel, ch, outputType = 'chord') {
             return { pitch: note, velocity: vel };
         });
 
-        // Apply velocity tilt
-        const tiltedNotes = applyVelocityTilt(notesWithVelocity, 0); // Pass 0 as we're not using CC value here
+        // Apply velocity tilt with current tilt amount
+        const tiltedNotes = applyVelocityTilt(notesWithVelocity, 0); // Pass 0 to maintain current tilt
 
         // Send each note with its own velocity
         tiltedNotes.forEach(note => {
