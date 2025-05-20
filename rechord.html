@@ -1708,6 +1708,48 @@ function handleMIDIMessage(ev) {
                 if (pitch >= 60 && pitch <= 71) {
                     transposeOffset = pitch - 60;  // 60 = 0, 61 = +1, etc.
                     showNotification(`Transpose set to ${transposeOffset}`, 'info');
+                    
+                    // If in trigger mode and we have a chord loaded, re-trigger it
+                    if (isPadTriggerMode && Chords.string.length > 0) {
+                        // First create the transposed chord
+                        const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
+                        
+                        // Convert to note objects with velocity from the key press
+                        const chordNotes = transposedChord.map(pitch => ({
+                            pitch: pitch,
+                            velocity: value // Use the actual velocity from the key press
+                        }));
+
+                        // Step 1: Apply inversion if needed
+                        let processedNotes = chordNotes;
+                        if (currentInversion > 0) {
+                            const invertedPitches = invertChord(processedNotes.map(n => n.pitch), currentInversion);
+                            processedNotes = invertedPitches.map((pitch, index) => ({
+                                pitch: pitch,
+                                velocity: processedNotes[index].velocity
+                            }));
+                        }
+
+                        // Step 2: Apply velocity tilt
+                        const tiltedNotes = applyVelocityTilt(processedNotes, 0);
+
+                        // Step 3: Store and send the processed chord
+                        const notes = tiltedNotes.map(n => n.pitch);
+                        const velocities = tiltedNotes.map(n => n.velocity);
+                        Chords.triggers[pitch] = notes; // Store under the transpose key
+                        sendChord(notes, velocities[0], MIDI_CHANNEL_MAIN, 'chord');
+                    }
+                    return;
+                }
+            }
+
+            // Handle note-off for transpose keys in trigger mode
+            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
+                if (pitch >= 60 && pitch <= 71 && isPadTriggerMode) {
+                    // Send note-off for all currently triggered notes
+                    const notes = Chords.triggers[pitch] || [];
+                    notes.forEach(note => send([MIDI_NOTE_OFF, note, 0], 'chord'));
+                    delete Chords.triggers[pitch];
                     return;
                 }
             }
