@@ -361,6 +361,76 @@ let isPadTriggerMode = false;
 // Add mute state tracking after other state variables
 let isMainOutputMuted = false;
 
+// Add inversion state tracking after other state variables
+const INVERSION_CC = 74;  // CC number for inversion control
+let currentInversion = 0;
+const INVERSION_THRESHOLD = 20;  // Number of ticks needed to trigger inversion change
+let inversionCounter = 0;  // Counter for CC ticks
+
+// Add inversion helper function
+function invertChord(notes, inversion) {
+    if (!notes || notes.length === 0) return notes;
+    
+    // Get max inversion for this chord
+    const maxInversion = Math.max(0, notes.length - 1);
+    
+    // Normalize inversion to be within bounds
+    inversion = ((inversion % (maxInversion + 1)) + (maxInversion + 1)) % (maxInversion + 1);
+    
+    // Create a copy of the notes array
+    const result = [...notes];
+    
+    // Perform the inversion
+    for (let i = 0; i < inversion; i++) {
+        const firstNote = result.shift();
+        result.push(firstNote + 12); // Move the note up an octave
+    }
+    
+    return result;
+}
+
+// Add inversion display update function
+function updateInversionDisplay() {
+    const chordPianoSection = document.querySelector('#chord-piano').parentElement;
+    let inversionDisplay = chordPianoSection.querySelector('.inversion-display');
+    
+    if (!inversionDisplay) {
+        inversionDisplay = document.createElement('div');
+        inversionDisplay.className = 'inversion-display';
+        inversionDisplay.style.cssText = `
+            margin-top: 10px;
+            padding: 5px;
+            background: var(--header-bg);
+            border-radius: var(--radius);
+            text-align: center;
+            font-size: 1.1em;
+        `;
+        chordPianoSection.appendChild(inversionDisplay);
+    }
+    
+    const maxInversion = getMaxInversion();
+    const inversionText = currentInversion === 0 ? 'Root Position' : 
+                         `${currentInversion}st/nd/rd Inversion`;
+    const maxText = maxInversion > 0 ? ` (max: ${maxInversion})` : '';
+    
+    inversionDisplay.innerHTML = `
+        <div>Chord Position: ${inversionText}${maxText}</div>
+        <div class="tilt-display" style="margin-top: 5px; font-size: 0.9em;">
+            Velocity Tilt: <span id="tilt-amount">0.00</span>
+            <br>
+            Pivot: <span id="tilt-pivot">0.00</span>
+        </div>
+    `;
+}
+
+// Add function to update tilt display
+function updateTiltDisplay() {
+    const tiltAmountEl = document.getElementById('tilt-amount');
+    const tiltPivotEl = document.getElementById('tilt-pivot');
+    if (tiltAmountEl) tiltAmountEl.textContent = tiltAmount.toFixed(2);
+    if (tiltPivotEl) tiltPivotEl.textContent = tiltPivot.toFixed(2);
+}
+
 // ————— MIDI Recorder Logic —————
 "use strict";
 
@@ -393,6 +463,7 @@ const STRING_TRIGGERS = [76, 77, 79, 81, 83, 84];  // String note triggers
 const FULL_CHORD = 58;     // Full chord trigger
 const FULL_STRING = 73;    // Full string trigger
 const CHORD_TRIGGER_TOGGLE = 48;   // Toggle chord trigger mode
+const VELOCITY_TILT_CC = 75;       // Velocity tilt control
 
 // Octave Controls
 const CHORD_OCTAVE_UP = 59;    // Chord octave up
@@ -440,6 +511,55 @@ let isWaitingForStorageKey = false;
 // Add record button timing variables
 let recordButtonPressTime = 0;
 let recordHoldCheckInterval = null;
+
+// Add tracking for currently playing chord notes
+let currentPlayingChordNotes = [];
+
+// Add tilt state variables
+let tiltAmount = 0.0;      // Current tilt amount (-1.0 to 1.0)
+let tiltPivot = 0.0;       // Current pivot point in chord
+
+// Add tilt constants
+const TILT_MIN = -1.0;           // Minimum tilt amount
+const TILT_MAX = 1.0;           // Maximum tilt amount
+const TILT_STEP = 0.01;         // Tilt adjustment step
+const TILT_PIVOT_SHIFT = 0.5;   // Pivot shift multiplier
+const TILT_VELOCITY_MULT = 60;  // Velocity delta multiplier
+const TILT_CC_MIN = 1;          // Minimum CC value for tilt
+const TILT_CC_MAX = 127;        // Maximum CC value for tilt
+const TILT_CC_CENTER = 64;      // Center position for tilt control
+
+// Add velocity tilt function
+function applyVelocityTilt(chordNotes, cc75value) {
+    if (!chordNotes || chordNotes.length === 0) return chordNotes;
+    
+    // Only update tilt amount if CC value is provided (not 0)
+    if (cc75value !== 0) {
+        if (cc75value === TILT_CC_MAX) {
+            tiltAmount = Math.max(TILT_MIN, tiltAmount - TILT_STEP);
+        } else if (cc75value === TILT_CC_MIN) {
+            tiltAmount = Math.min(TILT_MAX, tiltAmount + TILT_STEP);
+        } else if (cc75value === TILT_CC_CENTER) {
+            // Reset tilt when knob is in center position
+            tiltAmount = 0.0;
+        }
+    }
+    
+    // Sort notes by pitch
+    const sortedNotes = [...chordNotes].sort((a, b) => a.pitch - b.pitch);
+    
+    // Calculate pivot point
+    const pivotShift = tiltAmount * TILT_PIVOT_SHIFT;
+    const centerPivot = (sortedNotes.length - 1) / 2;
+    tiltPivot = Math.max(0, Math.min(sortedNotes.length - 1, centerPivot + pivotShift));
+    
+    // Apply velocity tilt to each note using map with index
+    return sortedNotes.map((note, index) => {
+        const velocityDelta = (index - tiltPivot) * tiltAmount * TILT_VELOCITY_MULT;
+        const newVelocity = Math.max(1, Math.min(127, note.velocity + velocityDelta));
+        return { ...note, velocity: Math.round(newVelocity) };
+    });
+}
 
 // ————— UI references —————
 const inputsSel = document.getElementById("inputs");
@@ -641,6 +761,11 @@ function debounceSave() {
 // Define updateStatus function
 function updateStatus() {
     modeDisplay.textContent = mode === MODE_STOP ? "STOP" : mode === MODE_RECORD ? "RECORD" : "PLAY";
+    
+    // Clear any stuck notes when changing modes
+    if (mode === MODE_STOP) {
+        clearAllChordNotes();
+    }
     
     // Enhanced chord display
     const currentChord = mode === MODE_RECORD ? Chords.record : Chords.string;
@@ -1259,6 +1384,101 @@ function handleMIDIMessage(ev) {
         const pitch = data1;
         const value = data2;
 
+        // Handle inversion CC (74) with threshold
+        if (type === MIDI_CONTROL_CHANGE && channel === MIDI_CHANNEL_MAIN && pitch === INVERSION_CC) {
+            // Get current max inversion based on chord size
+            const maxInversion = getMaxInversion();
+            
+            // Handle clockwise (127) and counterclockwise (1) rotation
+            if (value === 127) {
+                // Clockwise - increase counter
+                inversionCounter++;
+                if (inversionCounter >= INVERSION_THRESHOLD) {
+                    // Reset counter and increase inversion
+                    inversionCounter = 0;
+                    currentInversion = (currentInversion + 1) % (maxInversion + 1);
+                    
+                    // Clear current notes before changing inversion
+                    clearAllChordNotes();
+                    
+                    updateInversionDisplay();
+                    showNotification(`Chord Position: ${currentInversion === 0 ? 'Root' : 
+                        `${currentInversion}st/nd/rd`} Inversion`, 'info');
+                    
+                    // Only re-trigger the chord if in trigger mode
+                    if (isPadTriggerMode && Chords.string.length > 0) {
+                        const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
+                        // Convert chord to note objects with velocity
+                        const chordNotes = transposedChord.map(pitch => ({
+                            pitch: pitch,
+                            velocity: 100 // Use standard velocity for re-trigger
+                        }));
+                        // Apply velocity tilt with current tilt amount
+                        const tiltedNotes = applyVelocityTilt(chordNotes, 0); // Pass 0 to maintain current tilt
+                        // Extract pitches and velocities
+                        const notes = tiltedNotes.map(n => n.pitch);
+                        const velocities = tiltedNotes.map(n => n.velocity);
+                        Chords.triggers[FULL_CHORD] = notes;
+                        // Use sendChord for proper inversion handling
+                        sendChord(notes, velocities[0], MIDI_CHANNEL_MAIN, 'chord');
+                    }
+                }
+            } else if (value === 1) {
+                // Counterclockwise - decrease counter
+                inversionCounter--;
+                if (inversionCounter <= -INVERSION_THRESHOLD) {
+                    // Reset counter and decrease inversion
+                    inversionCounter = 0;
+                    currentInversion = (currentInversion - 1 + maxInversion + 1) % (maxInversion + 1);
+                    
+                    // Clear current notes before changing inversion
+                    clearAllChordNotes();
+                    
+                    updateInversionDisplay();
+                    showNotification(`Chord Position: ${currentInversion === 0 ? 'Root' : 
+                        `${currentInversion}st/nd/rd`} Inversion`, 'info');
+                    
+                    // Only re-trigger the chord if in trigger mode
+                    if (isPadTriggerMode && Chords.string.length > 0) {
+                        const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
+                        // Convert chord to note objects with velocity
+                        const chordNotes = transposedChord.map(pitch => ({
+                            pitch: pitch,
+                            velocity: 100 // Use standard velocity for re-trigger
+                        }));
+                        // Apply velocity tilt with current tilt amount
+                        const tiltedNotes = applyVelocityTilt(chordNotes, 0); // Pass 0 to maintain current tilt
+                        // Extract pitches and velocities
+                        const notes = tiltedNotes.map(n => n.pitch);
+                        const velocities = tiltedNotes.map(n => n.velocity);
+                        Chords.triggers[FULL_CHORD] = notes;
+                        // Use sendChord for proper inversion handling
+                        sendChord(notes, velocities[0], MIDI_CHANNEL_MAIN, 'chord');
+                    }
+                }
+            } else {
+                // Reset counter if knob is in middle position
+                inversionCounter = 0;
+            }
+            return;
+        }
+
+        // Handle velocity tilt CC (75)
+        if (type === MIDI_CONTROL_CHANGE && channel === MIDI_CHANNEL_MAIN && pitch === VELOCITY_TILT_CC) {
+            // Process velocity tilt CC
+            if (Chords.string.length > 0) {
+                // Create a test chord to show the effect
+                const testChord = Chords.string.map(n => ({
+                    pitch: n + transposeOffset + (fullChordOctaveOffset * 12),
+                    velocity: 100 // Use a standard velocity for testing
+                }));
+                const tiltedChord = applyVelocityTilt(testChord, value);
+                // Update the tilt display instead of showing notification
+                updateTiltDisplay();
+            }
+            return;
+        }
+
         // Pass through pitch bend and modulation
         if (type === MIDI_PITCH_BEND || type === MIDI_CONTROL_CHANGE) {
             if (type === MIDI_PITCH_BEND || (type === MIDI_CONTROL_CHANGE && data1 === 1)) {
@@ -1529,8 +1749,19 @@ function handleMIDIMessage(ev) {
             if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && pitch === FULL_CHORD) {
                 if (Chords.string.length) {
                     const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
-                    Chords.triggers[pitch] = transposedChord;
-                    sendChord(transposedChord, value, MIDI_CHANNEL_MAIN, 'chord');
+                    // Convert chord to note objects with velocity
+                    const chordNotes = transposedChord.map(pitch => ({
+                        pitch: pitch,
+                        velocity: value
+                    }));
+                    // Apply velocity tilt with current CC value
+                    const tiltedNotes = applyVelocityTilt(chordNotes, 0); // Pass 0 to maintain current tilt
+                    // Extract pitches and velocities
+                    const notes = tiltedNotes.map(n => n.pitch);
+                    const velocities = tiltedNotes.map(n => n.velocity);
+                    Chords.triggers[pitch] = notes;
+                    // Use sendChord for proper inversion handling
+                    sendChord(notes, velocities[0], MIDI_CHANNEL_MAIN, 'chord');
                 }
                 return;
             }
@@ -1597,18 +1828,60 @@ function send(data, outputType = 'main') {
     }
 }
 
+// Modify sendChord function to handle note-offs properly
 function sendChord(notes, vel, ch, outputType = 'chord') {
-    notes.forEach(n => {
-        send([MIDI_NOTE_ON | ((ch - 1) & 0x0F), n, vel], outputType);
-        updateKeyboard(n, true, outputType);
-    });
+    if (outputType === 'chord') {
+        const now = Date.now();
+        if (now - lastChordChangeTime > STUCK_NOTE_TIMEOUT) {
+            clearAllChordNotes();
+        }
+        lastChordChangeTime = now;
+
+        // Apply inversion for chord output
+        const notesToSend = invertChord(notes, currentInversion);
+
+        // Clear any existing notes first
+        clearAllChordNotes();
+
+        // Convert notes to note objects with velocity if they aren't already
+        const notesWithVelocity = notesToSend.map(note => {
+            if (typeof note === 'object' && 'velocity' in note) {
+                return note;
+            }
+            return { pitch: note, velocity: vel };
+        });
+
+        // Apply velocity tilt
+        const tiltedNotes = applyVelocityTilt(notesWithVelocity, 0); // Pass 0 as we're not using CC value here
+
+        // Send each note with its own velocity
+        tiltedNotes.forEach(note => {
+            send([MIDI_NOTE_ON | ((ch - 1) & 0x0F), note.pitch, note.velocity], outputType);
+            updateKeyboard(note.pitch, true, outputType);
+        });
+
+        // Update currently playing notes
+        currentPlayingChordNotes = tiltedNotes.map(n => n.pitch);
+    } else {
+        // For non-chord outputs, use the original behavior
+        notes.forEach(n => {
+            send([MIDI_NOTE_ON | ((ch - 1) & 0x0F), n, vel], outputType);
+            updateKeyboard(n, true, outputType);
+        });
+    }
 }
 
+// Modify sendNoteOffs to be more thorough
 function sendNoteOffs(notes, ch, outputType = 'chord') {
-    notes.forEach(n => {
-        send([MIDI_NOTE_OFF | ((ch - 1) & 0x0F), n, 0], outputType);
-        updateKeyboard(n, false, outputType);
-    });
+    if (outputType === 'chord') {
+        // Clear all notes when explicitly sending note-offs
+        clearAllChordNotes();
+    } else {
+        notes.forEach(n => {
+            send([MIDI_NOTE_OFF | ((ch - 1) & 0x0F), n, 0], outputType);
+            updateKeyboard(n, false, outputType);
+        });
+    }
 }
 
 // Create piano sections for each output
@@ -1726,6 +1999,9 @@ function createPianoSections() {
         
         pianoSectionsContainer.appendChild(section);
     });
+
+    // Initialize inversion display
+    updateInversionDisplay();
 }
 
 // Modify the updateKeyboard function to handle multiple pianos
@@ -2052,6 +2328,40 @@ updateStatus();
 // Initialize the piano sections and keyboards
 createPianoSections();
 createPianoKeyboard();
+
+// Add safety mechanism for stuck notes
+let lastChordChangeTime = 0;
+const STUCK_NOTE_TIMEOUT = 1000; // 1 second timeout for stuck notes
+
+// Add function to clear all notes
+function clearAllChordNotes() {
+    if (currentOutputs.chord) {
+        // Send note-off for all currently playing notes
+        currentPlayingChordNotes.forEach(note => {
+            send([MIDI_NOTE_OFF | ((MIDI_CHANNEL_MAIN - 1) & 0x0F), note, 0], 'chord');
+            updateKeyboard(note, false, 'chord');
+        });
+        
+        // Also send note-off for all possible MIDI notes to be extra safe
+        for (let note = 0; note < 128; note++) {
+            send([MIDI_NOTE_OFF | ((MIDI_CHANNEL_MAIN - 1) & 0x0F), note, 0], 'chord');
+            updateKeyboard(note, false, 'chord');
+        }
+        
+        currentPlayingChordNotes = [];
+    }
+}
+
+// Add function to get max inversion based on chord size
+function getMaxInversion() {
+    // Get the current chord being played
+    const currentChord = Chords.string.length > 0 ? Chords.string : Chords.record;
+    // Max inversion is number of notes minus 1 (since we need at least one note in original position)
+    return Math.max(0, currentChord.length - 1);
+}
+
+
+
 </script>
 </body>
 </html>
