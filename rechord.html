@@ -1839,31 +1839,37 @@ function sendChord(notes, vel, ch, outputType = 'chord') {
         }
         lastChordChangeTime = now;
 
-        // Apply inversion for chord output
-        const notesToSend = invertChord(notes, currentInversion);
-
         // Clear any existing notes first
         clearAllChordNotes();
 
         // Convert notes to note objects with velocity if they aren't already
-        const notesWithVelocity = notesToSend.map(note => {
+        const notesWithVelocity = notes.map(note => {
             if (typeof note === 'object' && 'velocity' in note) {
                 return note;
             }
             return { pitch: note, velocity: vel };
         });
 
-        // Apply velocity tilt with current tilt amount
+        // Apply velocity tilt first
         const tiltedNotes = applyVelocityTilt(notesWithVelocity, 0); // Pass 0 to maintain current tilt
 
+        // Then apply inversion to the tilted notes
+        const invertedNotes = invertChord(tiltedNotes.map(n => n.pitch), currentInversion);
+
+        // Map the inverted pitches back to their tilted velocities
+        const finalNotes = invertedNotes.map((pitch, index) => ({
+            pitch: pitch,
+            velocity: tiltedNotes[index].velocity
+        }));
+
         // Send each note with its own velocity
-        tiltedNotes.forEach(note => {
+        finalNotes.forEach(note => {
             send([MIDI_NOTE_ON | ((ch - 1) & 0x0F), note.pitch, note.velocity], outputType);
             updateKeyboard(note.pitch, true, outputType);
         });
 
         // Update currently playing notes
-        currentPlayingChordNotes = tiltedNotes.map(n => n.pitch);
+        currentPlayingChordNotes = finalNotes.map(n => n.pitch);
     } else {
         // For non-chord outputs, use the original behavior
         notes.forEach(n => {
