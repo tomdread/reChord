@@ -416,9 +416,9 @@ function updateInversionDisplay() {
     inversionDisplay.innerHTML = `
         <div>Chord Position: ${inversionText}${maxText}</div>
         <div class="tilt-display" style="margin-top: 5px; font-size: 0.9em;">
-            Velocity Tilt: <span id="tilt-amount">0.00</span>
+            Velocity Tilt: <span id="tilt-amount">${tiltAmount.toFixed(2)}</span>
             <br>
-            Pivot: <span id="tilt-pivot">0.00</span>
+            Pivot: <span id="tilt-pivot">${tiltPivot.toFixed(2)}</span>
         </div>
     `;
 }
@@ -540,10 +540,8 @@ function applyVelocityTilt(chordNotes, cc75value) {
         } else if (cc75value === TILT_CC_MIN) {
             tiltAmount = Math.min(TILT_MAX, tiltAmount + TILT_STEP);
         } else if (cc75value === TILT_CC_CENTER) {
-            // Reset tilt when knob is in center position
             tiltAmount = 0.0;
         }
-        // Update tilt display when tilt amount changes
         updateTiltDisplay();
     }
     
@@ -553,11 +551,15 @@ function applyVelocityTilt(chordNotes, cc75value) {
     // Calculate pivot point
     const pivotShift = tiltAmount * TILT_PIVOT_SHIFT;
     const centerPivot = (sortedNotes.length - 1) / 2;
-    tiltPivot = Math.max(0, Math.min(sortedNotes.length - 1, centerPivot + pivotShift));
+    const currentPivot = Math.max(0, Math.min(sortedNotes.length - 1, centerPivot + pivotShift));
+    
+    // Update tilt display with current pivot
+    tiltPivot = currentPivot;
+    updateTiltDisplay();
     
     // Apply velocity tilt to each note using map with index
     return sortedNotes.map((note, index) => {
-        const velocityDelta = (index - tiltPivot) * tiltAmount * TILT_VELOCITY_MULT;
+        const velocityDelta = (index - currentPivot) * tiltAmount * TILT_VELOCITY_MULT;
         const newVelocity = Math.max(1, Math.min(127, note.velocity + velocityDelta));
         return { ...note, velocity: Math.round(newVelocity) };
     });
@@ -1404,8 +1406,6 @@ function handleMIDIMessage(ev) {
                     clearAllChordNotes();
                     
                     updateInversionDisplay();
-                    showNotification(`Chord Position: ${currentInversion === 0 ? 'Root' : 
-                        `${currentInversion}st/nd/rd`} Inversion`, 'info');
                     
                     // Only re-trigger the chord if in trigger mode
                     if (isPadTriggerMode && Chords.string.length > 0) {
@@ -1416,7 +1416,7 @@ function handleMIDIMessage(ev) {
                             velocity: 100 // Use standard velocity for re-trigger
                         }));
                         // Apply velocity tilt with current tilt amount
-                        const tiltedNotes = applyVelocityTilt(chordNotes, 0); // Pass 0 to maintain current tilt
+                        const tiltedNotes = applyVelocityTilt(chordNotes, tiltAmount); // Pass current tiltAmount instead of 0
                         // Extract pitches and velocities
                         const notes = tiltedNotes.map(n => n.pitch);
                         const velocities = tiltedNotes.map(n => n.velocity);
@@ -1437,8 +1437,6 @@ function handleMIDIMessage(ev) {
                     clearAllChordNotes();
                     
                     updateInversionDisplay();
-                    showNotification(`Chord Position: ${currentInversion === 0 ? 'Root' : 
-                        `${currentInversion}st/nd/rd`} Inversion`, 'info');
                     
                     // Only re-trigger the chord if in trigger mode
                     if (isPadTriggerMode && Chords.string.length > 0) {
@@ -1449,7 +1447,7 @@ function handleMIDIMessage(ev) {
                             velocity: 100 // Use standard velocity for re-trigger
                         }));
                         // Apply velocity tilt with current tilt amount
-                        const tiltedNotes = applyVelocityTilt(chordNotes, 0); // Pass 0 to maintain current tilt
+                        const tiltedNotes = applyVelocityTilt(chordNotes, tiltAmount); // Pass current tiltAmount instead of 0
                         // Extract pitches and velocities
                         const notes = tiltedNotes.map(n => n.pitch);
                         const velocities = tiltedNotes.map(n => n.velocity);
@@ -1469,13 +1467,25 @@ function handleMIDIMessage(ev) {
         if (type === MIDI_CONTROL_CHANGE && channel === MIDI_CHANNEL_MAIN && pitch === VELOCITY_TILT_CC) {
             // Process velocity tilt CC
             if (Chords.string.length > 0) {
+                // Update tilt amount based on CC value
+                if (value === TILT_CC_MAX) {
+                    tiltAmount = Math.max(TILT_MIN, tiltAmount - TILT_STEP);
+                } else if (value === TILT_CC_MIN) {
+                    tiltAmount = Math.min(TILT_MAX, tiltAmount + TILT_STEP);
+                } else if (value === TILT_CC_CENTER) {
+                    tiltAmount = 0.0;
+                }
+                
                 // Create a test chord to show the effect
                 const testChord = Chords.string.map(n => ({
                     pitch: n + transposeOffset + (fullChordOctaveOffset * 12),
                     velocity: 100 // Use a standard velocity for testing
                 }));
-                const tiltedChord = applyVelocityTilt(testChord, value);
-                // Update the tilt display instead of showing notification
+                
+                // Apply the tilt to show the effect
+                const tiltedChord = applyVelocityTilt(testChord, 0);
+                
+                // Update the tilt display
                 updateTiltDisplay();
             }
             return;
@@ -1850,26 +1860,27 @@ function sendChord(notes, vel, ch, outputType = 'chord') {
             return { pitch: note, velocity: vel };
         });
 
-        // Apply velocity tilt first
-        const tiltedNotes = applyVelocityTilt(notesWithVelocity, 0); // Pass 0 to maintain current tilt
+        // Step 1: Apply inversion if needed
+        let processedNotes = notesWithVelocity;
+        if (currentInversion > 0) {
+            const invertedPitches = invertChord(notesWithVelocity.map(n => n.pitch), currentInversion);
+            processedNotes = invertedPitches.map((pitch, index) => ({
+                pitch: pitch,
+                velocity: notesWithVelocity[index].velocity
+            }));
+        }
 
-        // Then apply inversion to the tilted notes
-        const invertedNotes = invertChord(tiltedNotes.map(n => n.pitch), currentInversion);
+        // Step 2: Apply velocity tilt
+        const tiltedNotes = applyVelocityTilt(processedNotes, 0);
 
-        // Map the inverted pitches back to their tilted velocities
-        const finalNotes = invertedNotes.map((pitch, index) => ({
-            pitch: pitch,
-            velocity: tiltedNotes[index].velocity
-        }));
-
-        // Send each note with its own velocity
-        finalNotes.forEach(note => {
+        // Step 3: Send to output
+        tiltedNotes.forEach(note => {
             send([MIDI_NOTE_ON | ((ch - 1) & 0x0F), note.pitch, note.velocity], outputType);
             updateKeyboard(note.pitch, true, outputType);
         });
 
         // Update currently playing notes
-        currentPlayingChordNotes = finalNotes.map(n => n.pitch);
+        currentPlayingChordNotes = tiltedNotes.map(n => n.pitch);
     } else {
         // For non-chord outputs, use the original behavior
         notes.forEach(n => {
@@ -2252,7 +2263,38 @@ async function saveChordsToDB() {
             sequence: Chords.sequence // Add sequence to saved data
         };
         const request = store.put(data, songName);
-        request.onsuccess = () => resolve();
+        request.onsuccess = () => {
+            // Add a subtle save indicator
+            const saveIndicator = document.createElement('div');
+            saveIndicator.className = 'save-indicator';
+            saveIndicator.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
+                background: rgba(76, 175, 80, 0.1);
+                color: #4CAF50;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 0.8em;
+                opacity: 0;
+                transition: opacity 0.3s;
+            `;
+            saveIndicator.textContent = '✓ Saved';
+            document.body.appendChild(saveIndicator);
+            
+            // Fade in
+            requestAnimationFrame(() => {
+                saveIndicator.style.opacity = '1';
+            });
+            
+            // Remove after 1.5 seconds
+            setTimeout(() => {
+                saveIndicator.style.opacity = '0';
+                setTimeout(() => saveIndicator.remove(), 300);
+            }, 1500);
+            
+            resolve();
+        };
         request.onerror = () => {
             showNotification('Error saving chords/notes', 'warning');
             reject(request.error);
