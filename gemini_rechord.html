@@ -373,10 +373,12 @@ const Chords = {
 let isRecordingSequence = false;
 let isSequenceMode = false;
 let pendingSequenceChord = null; // Holds the chord for the current step in sequence record mode
+let isWaitingForSequenceStepConfirmation = false;
 
 // Add sequence control CCs
 const sequenceStartCC = 115;    // Previous chord
 const sequenceNextCC = 116;     // Next chord
+const sequenceAdvanceData2CC = 127;
 
 // Add pad trigger mode state
 let isPadTriggerMode = false;
@@ -1003,11 +1005,18 @@ buttonManager.registerButton(recordCC, {
     },
     onRelease: (duration) => {
         if (isRecordingSequence) {
-            // Finalize any pending chord on record release
-            if (pendingSequenceChord && pendingSequenceChord.length > 0) {
+            if (pendingSequenceChord && pendingSequenceChord.length > 0 && isWaitingForSequenceStepConfirmation) {
                 Chords.sequence.push([...pendingSequenceChord]);
-                pendingSequenceChord = null;
+                showNotification('Last pending chord added to sequence.', 'info');
             }
+            pendingSequenceChord = null; // Clear it regardless
+            isWaitingForSequenceStepConfirmation = false; // Reset this state
+
+            // Finalize any pending chord on record release - Original logic modified by above
+            // if (pendingSequenceChord && pendingSequenceChord.length > 0) { // This specific check is now part of the new logic
+            //     Chords.sequence.push([...pendingSequenceChord]);
+            //     pendingSequenceChord = null;
+            // }
             isRecordingSequence = false;
             if (Chords.sequence.length > 0) { saveChordsToDB(); showNotification(`Sequence: ${Chords.sequence.length} chords`, 'success'); }
             else { showNotification('No chords in sequence', 'warning'); }
@@ -1061,6 +1070,7 @@ buttonManager.registerButton(recordCC, {
             selectedStoragePad = null;
             Chords.sequence = [];
             pendingSequenceChord = null;
+            isWaitingForSequenceStepConfirmation = false;
             showNotification('Sequence Recording Started', 'info');
         }
         // If already in MODE_RECORD, a hold might have other future meanings,
@@ -1074,19 +1084,61 @@ buttonManager.registerButton(playCC, { onPress: () => { mode = MODE_PLAY; isMain
 buttonManager.registerButton(stopCC, { onPress: () => { mode = MODE_STOP; isMainOutputMuted = false; updateStatus(); showNotification('STOP Mode - Main unmuted', 'info'); } });
 
 buttonManager.registerSimultaneousGroup('sequence', [sequenceStartCC, sequenceNextCC], () => {
-    if (isSequenceMode) { isSequenceMode = false; showNotification('Exited sequence mode', 'info'); Chords.sequenceReady = false; }
-    else if (Chords.sequence.length > 0) {
-        isSequenceMode = true; Chords.sequenceIndex = 0; loadChordFromSequence(Chords.sequenceIndex);
-        showNotification('Entered sequence mode', 'info'); setTimeout(() => { Chords.sequenceReady = true; }, 300);
+    if (!isRecordingSequence) { // Wrap existing logic
+        if (isSequenceMode) { 
+            isSequenceMode = false; 
+            showNotification('Exited sequence mode', 'info'); 
+            Chords.sequenceReady = false; 
+        } else if (Chords.sequence.length > 0) {
+            isSequenceMode = true; 
+            Chords.sequenceIndex = 0; 
+            loadChordFromSequence(Chords.sequenceIndex);
+            showNotification('Entered sequence mode', 'info'); 
+            setTimeout(() => { Chords.sequenceReady = true; }, 300);
+        }
     }
 });
 buttonManager.registerButton(sequenceStartCC, {
-    onPress: () => { if (isSequenceMode && Chords.sequenceReady) { Chords.sequenceIndex = (Chords.sequenceIndex - 1 + Chords.sequence.length) % Chords.sequence.length; loadChordFromSequence(Chords.sequenceIndex); } },
+    onPress: () => { 
+        if (isSequenceMode && Chords.sequenceReady && !isRecordingSequence) { // Added !isRecordingSequence
+            Chords.sequenceIndex = (Chords.sequenceIndex - 1 + Chords.sequence.length) % Chords.sequence.length; 
+            loadChordFromSequence(Chords.sequenceIndex); 
+        }
+    },
     simultaneousGroup: 'sequence'
 });
 buttonManager.registerButton(sequenceNextCC, {
-    onPress: () => { if (isSequenceMode && Chords.sequenceReady) { Chords.sequenceIndex = (Chords.sequenceIndex + 1) % Chords.sequence.length; loadChordFromSequence(Chords.sequenceIndex); } },
-    simultaneousGroup: 'sequence'
+    onPress: () => { 
+        if (isSequenceMode && Chords.sequenceReady && !isRecordingSequence) { // Added !isRecordingSequence
+            Chords.sequenceIndex = (Chords.sequenceIndex + 1) % Chords.sequence.length; 
+            loadChordFromSequence(Chords.sequenceIndex); 
+        }
+        // If isRecordingSequence is true, a solo press of 116 will now do nothing.
+        // The simultaneous group 'sequenceStepAdvance' handles 116+127.
+    },
+    simultaneousGroup: 'sequence' // Remains for 115+116 combination
+});
+
+buttonManager.registerButton(sequenceAdvanceData2CC, {
+    onPress: () => {
+        // console.log('DATA2 (127) pressed - handled by sequenceStepAdvance group if DATA1 also pressed');
+    },
+    simultaneousGroup: 'sequenceStepAdvance' // For 116+127 combination
+});
+
+buttonManager.registerSimultaneousGroup('sequenceStepAdvance', [sequenceNextCC, sequenceAdvanceData2CC], () => {
+    if (isRecordingSequence && isWaitingForSequenceStepConfirmation) {
+        if (pendingSequenceChord && pendingSequenceChord.length > 0) {
+            Chords.sequence.push([...pendingSequenceChord]);
+            const stepNumber = Chords.sequence.length;
+            showNotification(`Step ${stepNumber} recorded: ${detectChord(pendingSequenceChord.map(n=>getNoteNameFromMIDI(n))) || 'Chord'}. Play chord for Step ${stepNumber + 1}.`, 'success');
+            pendingSequenceChord = null;
+            isWaitingForSequenceStepConfirmation = false;
+        } else {
+            showNotification('No chord selected for this step. Play a chord first.', 'warning');
+        }
+    }
+    // This combination should not do anything if not in sequence recording/waiting mode.
 });
 
 function handleMIDIMessage(ev) {
@@ -1187,6 +1239,20 @@ function handleMIDIMessage(ev) {
                     }
                     updateStatus();
                     showNotification(`${noteIndex === -1 ? 'Added' : 'Removed'} ${getNoteNameFromMIDI(pitch)} to current chord.`, 'info');
+
+                    if (isRecordingSequence) {
+                        pendingSequenceChord = [...Chords.record]; // Copy notes to pendingSequenceChord
+                        isWaitingForSequenceStepConfirmation = true;
+                        // Update UI/notify about the pending chord
+                        let chordNotesText = pendingSequenceChord.length > 0 
+                            ? pendingSequenceChord.map(note => getNoteNameFromMIDI(note)).join(' ') 
+                            : 'No Chord';
+                        let chordName = pendingSequenceChord.length > 0 
+                            ? (detectChord(pendingSequenceChord.map(note => getNoteNameFromMIDI(note))) || 'Unknown Chord') 
+                            : '-';
+                        const nextStepNumber = Chords.sequence.length + 1;
+                        showNotification(`Step ${nextStepNumber} pending: ${chordName} (${chordNotesText}). Press DATA1+DATA2 to record.`, 'info', 4000);
+                    }
                     return;
                 }
             } else if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
@@ -1204,17 +1270,18 @@ function handleMIDIMessage(ev) {
                     return;
                 }
             } else if (channel === MIDI_CHANNEL_MAIN) { // Other CCs or message types on main channel
-                // Sequence record step advance: CC 116/127
-                if (isRecordingSequence && type === MIDI_CONTROL_CHANGE && channel === MIDI_CHANNEL_MAIN && pitch === sequenceNextCC && value === 127) {
-                    if (pendingSequenceChord && pendingSequenceChord.length > 0) {
-                        Chords.sequence.push([...pendingSequenceChord]);
-                        pendingSequenceChord = null;
-                        showNotification(`Step recorded (${Chords.sequence.length})`, 'success');
-                    } else {
-                        showNotification('No chord selected for this step', 'warning');
-                    }
-                    return;
-                }
+                // The following block has been removed as it's redundant with ButtonManager's 'sequenceStepAdvance' group:
+                // if (isRecordingSequence && type === MIDI_CONTROL_CHANGE && channel === MIDI_CHANNEL_MAIN && pitch === sequenceNextCC && value === 127) {
+                //     if (pendingSequenceChord && pendingSequenceChord.length > 0) {
+                //         Chords.sequence.push([...pendingSequenceChord]);
+                //         pendingSequenceChord = null;
+                //         showNotification(`Step recorded (${Chords.sequence.length})`, 'success');
+                //     } else {
+                //         showNotification('No chord selected for this step', 'warning');
+                //     }
+                //     return;
+                // }
+
                 // General passthrough for other messages on the main channel if not arming save
                 if (!isArmingSave) {
                      send(ev.data, 'main');
