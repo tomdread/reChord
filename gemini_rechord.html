@@ -523,29 +523,38 @@ let currentPlayingChordNotes = [];
 
 let tiltAmount = 0.0;
 let tiltPivot = 0.0;
+let tiltCounter = 0; // Counter for CC ticks for tilt
 
 const TILT_MIN = -1.0;
 const TILT_MAX = 1.0;
 const TILT_STEP = 0.01;
 const TILT_PIVOT_SHIFT = 0.5;
 const TILT_VELOCITY_MULT = 60;
-const TILT_CC_MIN = 10;
-const TILT_CC_MAX = 126;
+const TILT_CC_MIN = 1;
+const TILT_CC_MAX = 127;
 const TILT_CC_CENTER = 64;
+const TILT_THRESHOLD = 20; // Number of ticks needed to trigger tilt change
 
 function applyVelocityTilt(chordNotes, cc75value) {
     if (!chordNotes || chordNotes.length === 0) return chordNotes;
     
     if (cc75value !== 0) { // Only update tilt amount if CC value is explicitly provided
-        if (cc75value === TILT_CC_MAX) {
-            tiltAmount = Math.max(TILT_MIN, tiltAmount - TILT_STEP);
-        } else if (cc75value === TILT_CC_MIN) {
-            tiltAmount = Math.min(TILT_MAX, tiltAmount + TILT_STEP);
-        } else if (cc75value === TILT_CC_CENTER) {
-            tiltAmount = 0.0;
+        if (cc75value === TILT_CC_MAX) tiltCounter++;
+        else if (cc75value === TILT_CC_MIN) tiltCounter--;
+        else { tiltCounter = 0; }
+
+        if (Math.abs(tiltCounter) >= TILT_THRESHOLD) {
+            if (tiltCounter > 0) {
+                tiltAmount = Math.max(TILT_MIN, tiltAmount - TILT_STEP);
+            } else {
+                tiltAmount = Math.min(TILT_MAX, tiltAmount + TILT_STEP);
+            }
+            tiltCounter = 0;
         }
-        // No need to call updateTiltDisplay() here if cc75value is 0 (just applying existing tilt)
-        // updateTiltDisplay(); // This was called unconditionally, moved inside if(cc75value !==0)
+        if (cc75value === TILT_CC_CENTER) {
+            tiltAmount = 0.0;
+            tiltCounter = 0;
+        }
     }
     
     const sortedNotes = [...chordNotes].sort((a, b) => a.pitch - b.pitch);
