@@ -478,21 +478,18 @@ const STRING_TRIGGERS = [76, 77, 79, 81, 83, 84];
 const FULL_CHORD = 58;
 const FULL_STRING = 73;
 const CHORD_TRIGGER_TOGGLE = 48;
-const VELOCITY_TILT_CC = 75; // Note: Same as a BASS_TRIGGER. This might be an issue.
-                             // If CC75 is used for tilt, it shouldn't also be a bass trigger note.
-                             // Assuming VELOCITY_TILT_CC is a Control Change, BASS_TRIGGERS are notes.
+const VELOCITY_TILT_CC = 75; 
 
 const CHORD_OCTAVE_UP = 59;
 const CHORD_OCTAVE_DOWN = 57;
-const STRING_OCTAVE_UP = 74; // Note: Same as INVERSION_CC. This is a problem if both are CCs.
-                             // Assuming INVERSION_CC is a Control Change, STRING_OCTAVE_UP is a note.
+const STRING_OCTAVE_UP = 74
 const STRING_OCTAVE_DOWN = 72;
 
 const DEFAULT_INPUT_NAME = "MPK mini Plus Port 1";
 const DEFAULT_OUTPUT_NAMES = {
     main: "IAC Driver miDiai00",
-    bass: "IAC Driver miDiai01",
-    chord: "IAC Driver miDiai02",
+    chord: "IAC Driver miDiai01",
+    bass: "IAC Driver miDiai02",
     string: "IAC Driver miDiai03"
 };
 
@@ -536,7 +533,7 @@ const TILT_VELOCITY_MULT = 60;
 const TILT_CC_MIN = 1;
 const TILT_CC_MAX = 127;
 const TILT_CC_CENTER = 64;
-const TILT_THRESHOLD = 20; // Number of ticks needed to trigger tilt change
+const TILT_THRESHOLD = 10; // Number of ticks needed to trigger tilt change
 
 function applyVelocityTilt(chordNotes, cc75value) {
     if (!chordNotes || chordNotes.length === 0) return chordNotes;
