@@ -240,6 +240,40 @@ body, input, textarea, button, select, .piano-key, .key-text, .piano-section, .s
     font-family: 'Consolas', 'Menlo', 'Monaco', 'Liberation Mono', 'Lucida Console', 'DejaVu Sans Mono', 'Courier New', 'Courier', monospace !important;
 }
 
+/* Add sequence display styles */
+.sequence-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+}
+
+.sequence-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.sequence-step {
+    padding: 8px 12px;
+    background: var(--header-bg);
+    border-radius: var(--radius);
+    font-family: monospace;
+}
+
+.sequence-step.active {
+    background: var(--highlight);
+    font-weight: bold;
+}
+
+.sequence-status {
+    margin-top: 10px;
+    font-size: 0.9em;
+    color: #666;
+}
 </style>
 </head>
 <body>
@@ -253,6 +287,17 @@ body, input, textarea, button, select, .piano-key, .key-text, .piano-section, .s
         </div>
     </div>
 </div>
+
+<!-- Add sequence display section -->
+<div class="sequence-section">
+    <h3>Sequence</h3>
+    <div id="sequence-display" class="sequence-steps"></div>
+    <div class="sequence-status">
+        <span id="sequence-mode-indicator"></span>
+        <span id="current-step-indicator"></span>
+    </div>
+</div>
+
 <div id="notification-area"></div>
 
 <script>
@@ -633,11 +678,9 @@ function debounceSave() {
 }
 
 function updateStatus() {
-    // console.log("DEBUG: updateStatus called. Current mode:", mode); // Add this line
     const modeDisplayEl = document.getElementById("mode"); 
     if (modeDisplayEl) {
        modeDisplayEl.textContent = mode === MODE_STOP ? "STOP" : mode === MODE_RECORD ? "RECORD" : "PLAY";
-       // console.log("DEBUG: Mode display text set to:", modeDisplayEl.textContent);
     } else {
        console.warn("updateStatus: modeDisplay element not found!");
     }
@@ -651,10 +694,10 @@ function updateStatus() {
         ? currentChordForDisplay.map(note => getNoteNameFromMIDI(note)).join(' ')
         : 'No Chord';
     
-    const chordDisplayEl = document.getElementById('currentChord'); // Get fresh reference
+    const chordDisplayEl = document.getElementById('currentChord');
     if (chordDisplayEl) chordDisplayEl.textContent = chordNotesText;
     
-    const chordNameElement = document.getElementById('chordName'); // Get fresh reference
+    const chordNameElement = document.getElementById('chordName');
     if (chordNameElement) {
         if (currentChordForDisplay.length > 0) {
             const chordName = detectChord(currentChordForDisplay.map(note => getNoteNameFromMIDI(note)));
@@ -673,6 +716,10 @@ function updateStatus() {
             if (key) key.classList.add('active');
         });
     }
+    
+    // Add sequence display update
+    updateSequenceDisplay();
+    
     debounceSave();
 }
 
@@ -1081,17 +1128,11 @@ buttonManager.registerButton(playCC, { onPress: () => { mode = MODE_PLAY; isMain
 buttonManager.registerButton(stopCC, { onPress: () => { mode = MODE_STOP; isMainOutputMuted = false; updateStatus(); showNotification('STOP Mode - Main unmuted', 'info'); } });
 
 buttonManager.registerSimultaneousGroup('sequence', [sequenceStartCC, sequenceNextCC], () => {
-    if (!isRecordingSequence) { // Wrap existing logic
-        if (isSequenceMode) { 
-            isSequenceMode = false; 
-            showNotification('Exited sequence mode', 'info'); 
-            Chords.sequenceReady = false; 
+    if (!isRecordingSequence) {
+        if (isSequenceMode) {
+            exitSequenceMode();
         } else if (Chords.sequence.length > 0) {
-            isSequenceMode = true; 
-            Chords.sequenceIndex = 0; 
-            loadChordFromSequence(Chords.sequenceIndex);
-            showNotification('Entered sequence mode', 'info'); 
-            setTimeout(() => { Chords.sequenceReady = true; }, 300);
+            enterSequenceMode();
         }
     }
 });
@@ -1146,6 +1187,20 @@ function handleMIDIMessage(ev) {
 
         // Handle button CCs first, regardless of mode
         buttonManager.handleMessage(status, data1, data2);
+
+        // Handle sequence navigation directly
+        if (status === MIDI_CONTROL_CHANGE && data2 > 0) {  // Only on press, not release
+            if (data1 === sequenceNextCC && isSequenceMode) {
+                Chords.sequenceIndex = (Chords.sequenceIndex + 1) % Chords.sequence.length;
+                loadChordFromSequence(Chords.sequenceIndex);
+                return;
+            }
+            if (data1 === sequenceStartCC && isSequenceMode) {
+                Chords.sequenceIndex = (Chords.sequenceIndex - 1 + Chords.sequence.length) % Chords.sequence.length;
+                loadChordFromSequence(Chords.sequenceIndex);
+                return;
+            }
+        }
 
         // Explicit STOP mode handling: passthrough all MIDI and return
         if (mode === MODE_STOP) {
@@ -1310,107 +1365,107 @@ function handleMIDIMessage(ev) {
                     if (pitch === STRING_OCTAVE_UP) { stringOctaveOffset++; showNotification(`String Oct: ${stringOctaveOffset > 0 ? '+' : ''}${stringOctaveOffset}`, 'info'); return; }
                     if (pitch === STRING_OCTAVE_DOWN) { stringOctaveOffset--; showNotification(`String Oct: ${stringOctaveOffset > 0 ? '+' : ''}${stringOctaveOffset}`, 'info'); return; }
                 }
-            }
-            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && pitch === CHORD_TRIGGER_TOGGLE) {
-                isPadTriggerMode = !isPadTriggerMode; showNotification(`Chord trigger ${isPadTriggerMode ? 'ON' : 'OFF'}`, 'info'); return;
-            }
-
-            // Pad handling (load/trigger)
-            if ((type === MIDI_NOTE_ON || type === MIDI_NOTE_OFF) && (channel === MIDI_CHANNEL_DRUMS || (channel === MIDI_CHANNEL_MAIN && PAD_MAP_1[pitch]))) {
-                const padNumber = channel === MIDI_CHANNEL_DRUMS ? pitch : PAD_MAP_1[pitch];
-                const padData = Chords.pads[padNumber];
-                if (!padData || !padData.chord || padData.chord.length === 0) {
-                    if (type === MIDI_NOTE_ON && value > 0) showNotification(`Pad ${padNumber} empty`, 'warning');
-                    return; // Block message for empty pads
+                if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && pitch === CHORD_TRIGGER_TOGGLE) {
+                    isPadTriggerMode = !isPadTriggerMode; showNotification(`Chord trigger ${isPadTriggerMode ? 'ON' : 'OFF'}`, 'info'); return;
                 }
 
-                if (type === MIDI_NOTE_ON) { // Note ON for pad
-                    Chords.string = [...(padData.bass || []), ...padData.chord]; // Load chord
-                    if (isRecordingSequence) {
-                        // In sequence record mode, set pending chord to current selection
-                        pendingSequenceChord = [...Chords.string];
-                    }
-                    if (isPadTriggerMode) {
-                        const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
-                        const notesToPlay = transposedChord.map(p => ({ pitch: p, velocity: value }));
-                        // Inversion and tilt are handled by sendChord
-                        Chords.triggers[padNumber] = notesToPlay.map(n => n.pitch); // Store raw pitches for note-off
+                // Transpose keys (60-71)
+                if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && pitch >= 60 && pitch <= 71) {
+                    transposeOffset = pitch - 60; showNotification(`Transpose: ${transposeOffset}`, 'info');
+                    if (isPadTriggerMode && Chords.string.length > 0 && !isSequenceMode) {  // Only trigger if not in sequence mode
+                        const baseNotes = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
+                        const notesToPlay = baseNotes.map(p => ({ pitch: p, velocity: value }));
+                        Chords.triggers[pitch] = notesToPlay.map(n => n.pitch); // Store raw pitches for note-off
                         sendChord(notesToPlay.map(n => n.pitch), value, MIDI_CHANNEL_MAIN, 'chord');
                     }
-                    updateStatus(); showNotification(`Loaded pad ${padNumber}${isPadTriggerMode ? ' (triggered)' : ''}`, 'info');
                     return;
-                } else { // Note OFF for pad
-                    if (isPadTriggerMode && Chords.triggers[padNumber]) {
-                        sendNoteOffs(Chords.triggers[padNumber], MIDI_CHANNEL_MAIN, 'chord');
-                        delete Chords.triggers[padNumber];
+                }
+                if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN && pitch >= 60 && pitch <= 71) {
+                    if (isPadTriggerMode && Chords.triggers[pitch] && !isSequenceMode) {  // Only handle note-off if not in sequence mode
+                        sendNoteOffs(Chords.triggers[pitch], MIDI_CHANNEL_MAIN, 'chord');
+                        delete Chords.triggers[pitch];
                     }
                     return;
                 }
-            }
 
-            // Transpose keys (60-71)
-            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && pitch >= 60 && pitch <= 71) {
-                transposeOffset = pitch - 60; showNotification(`Transpose: ${transposeOffset}`, 'info');
-                if (isPadTriggerMode && Chords.string.length > 0) {
-                    const baseNotes = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
-                    const notesToPlay = baseNotes.map(p => ({ pitch: p, velocity: value }));
-                    Chords.triggers[pitch] = notesToPlay.map(n => n.pitch); // Store raw pitches for note-off
-                    sendChord(notesToPlay.map(n => n.pitch), value, MIDI_CHANNEL_MAIN, 'chord');
-                }
-                return;
-            }
-            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN && pitch >= 60 && pitch <= 71) {
-                if (isPadTriggerMode && Chords.triggers[pitch]) {
-                    sendNoteOffs(Chords.triggers[pitch], MIDI_CHANNEL_MAIN, 'chord');
-                    delete Chords.triggers[pitch];
-                }
-                return;
-            }
-
-            // String/Bass/Full Chord Triggers
-            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN) {
-                let targetOutput = null, notesToPlay = [], triggerKey = pitch;
-                if (STRING_TRIGGERS.includes(pitch) && Chords.string.length) {
-                    let idx = STRING_TRIGGERS.indexOf(pitch);
-                    if (idx >= Chords.string.length) idx = Chords.string.length - 1;
-                    notesToPlay = [Chords.string[idx] + transposeOffset + (stringOctaveOffset * 12)];
-                    targetOutput = 'string';
-                } else if (BASS_TRIGGERS.includes(pitch) && Chords.string.length) {
-                    let idx = BASS_TRIGGERS.indexOf(pitch);
-                    if (idx < Chords.string.length) { // Ensure index is valid
-                         notesToPlay = [Chords.string[idx] + transposeOffset + (stringOctaveOffset * 12) - 12]; // Bass is octave down
-                         targetOutput = 'bass';
+                // Pad handling (load/trigger)
+                if ((type === MIDI_NOTE_ON || type === MIDI_NOTE_OFF) && (channel === MIDI_CHANNEL_DRUMS || (channel === MIDI_CHANNEL_MAIN && PAD_MAP_1[pitch]))) {
+                    const padNumber = channel === MIDI_CHANNEL_DRUMS ? pitch : PAD_MAP_1[pitch];
+                    const padData = Chords.pads[padNumber];
+                    if (!padData || !padData.chord || padData.chord.length === 0) {
+                        if (type === MIDI_NOTE_ON && value > 0) showNotification(`Pad ${padNumber} empty`, 'warning');
+                        return; // Block message for empty pads
                     }
-                } else if (pitch === FULL_CHORD && Chords.string.length) {
-                    notesToPlay = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
-                    targetOutput = 'chord';
-                } else if (pitch === FULL_STRING && Chords.string.length) {
-                    notesToPlay = Chords.string.map(n => n + transposeOffset + (stringOctaveOffset * 12));
-                    targetOutput = 'string';
+
+                    if (type === MIDI_NOTE_ON) { // Note ON for pad
+                        Chords.string = [...(padData.bass || []), ...padData.chord]; // Load chord
+                        if (isRecordingSequence) {
+                            // In sequence record mode, set pending chord to current selection
+                            pendingSequenceChord = [...Chords.string];
+                        }
+                        if (isPadTriggerMode) {
+                            const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
+                            const notesToPlay = transposedChord.map(p => ({ pitch: p, velocity: value }));
+                            // Inversion and tilt are handled by sendChord
+                            Chords.triggers[padNumber] = notesToPlay.map(n => n.pitch); // Store raw pitches for note-off
+                            sendChord(notesToPlay.map(n => n.pitch), value, MIDI_CHANNEL_MAIN, 'chord');
+                        }
+                        updateStatus(); showNotification(`Loaded pad ${padNumber}${isPadTriggerMode ? ' (triggered)' : ''}`, 'info');
+                        return;
+                    } else { // Note OFF for pad
+                        if (isPadTriggerMode && Chords.triggers[padNumber]) {
+                            sendNoteOffs(Chords.triggers[padNumber], MIDI_CHANNEL_MAIN, 'chord');
+                            delete Chords.triggers[padNumber];
+                        }
+                        return;
+                    }
                 }
 
-                if (targetOutput && notesToPlay.length > 0) {
-                    Chords.triggers[triggerKey] = notesToPlay; // Store raw pitches for note-off
-                    sendChord(notesToPlay, value, MIDI_CHANNEL_MAIN, targetOutput);
-                    return;
-                }
-            }
-            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
-                 let targetOutput = null;
-                 if (STRING_TRIGGERS.includes(pitch)) targetOutput = 'string';
-                 else if (BASS_TRIGGERS.includes(pitch)) targetOutput = 'bass';
-                 else if (pitch === FULL_CHORD) targetOutput = 'chord';
-                 else if (pitch === FULL_STRING) targetOutput = 'string';
+                // String/Bass/Full Chord Triggers
+                if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN) {
+                    let targetOutput = null, notesToPlay = [], triggerKey = pitch;
+                    if (STRING_TRIGGERS.includes(pitch) && Chords.string.length) {
+                        let idx = STRING_TRIGGERS.indexOf(pitch);
+                        if (idx >= Chords.string.length) idx = Chords.string.length - 1;
+                        notesToPlay = [Chords.string[idx] + transposeOffset + (stringOctaveOffset * 12)];
+                        targetOutput = 'string';
+                    } else if (BASS_TRIGGERS.includes(pitch) && Chords.string.length) {
+                        let idx = BASS_TRIGGERS.indexOf(pitch);
+                        if (idx < Chords.string.length) { // Ensure index is valid
+                             notesToPlay = [Chords.string[idx] + transposeOffset + (stringOctaveOffset * 12) - 12]; // Bass is octave down
+                             targetOutput = 'bass';
+                        }
+                    } else if (pitch === FULL_CHORD && Chords.string.length) {
+                        notesToPlay = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
+                        targetOutput = 'chord';
+                    } else if (pitch === FULL_STRING && Chords.string.length) {
+                        notesToPlay = Chords.string.map(n => n + transposeOffset + (stringOctaveOffset * 12));
+                        targetOutput = 'string';
+                    }
 
-                if (targetOutput && Chords.triggers[pitch]) {
-                    sendNoteOffs(Chords.triggers[pitch], MIDI_CHANNEL_MAIN, targetOutput);
-                    delete Chords.triggers[pitch];
-                    return;
+                    if (targetOutput && notesToPlay.length > 0) {
+                        Chords.triggers[triggerKey] = notesToPlay; // Store raw pitches for note-off
+                        sendChord(notesToPlay, value, MIDI_CHANNEL_MAIN, targetOutput);
+                        return;
+                    }
                 }
+                if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
+                     let targetOutput = null;
+                     if (STRING_TRIGGERS.includes(pitch)) targetOutput = 'string';
+                     else if (BASS_TRIGGERS.includes(pitch)) targetOutput = 'bass';
+                     else if (pitch === FULL_CHORD) targetOutput = 'chord';
+                     else if (pitch === FULL_STRING) targetOutput = 'string';
+
+                    if (targetOutput && Chords.triggers[pitch]) {
+                        sendNoteOffs(Chords.triggers[pitch], MIDI_CHANNEL_MAIN, targetOutput);
+                        delete Chords.triggers[pitch];
+                        return;
+                    }
+                }
+                // If no specific PLAY mode action taken, MIDI message is currently dropped
+                // as there is no final passthrough in PLAY mode. This is by design of previous structure.
+                // If general passthrough is desired in PLAY mode for unmapped keys, it needs to be added here.
             }
-            // If no specific PLAY mode action taken, MIDI message is currently dropped
-            // as there is no final passthrough in PLAY mode. This is by design of previous structure.
-            // If general passthrough is desired in PLAY mode for unmapped keys, it needs to be added here.
         }
         // Messages not handled by STOP, RECORD, or PLAY logic (e.g. other CCs not managed by ButtonManager)
         // will be dropped unless a specific passthrough is added here or at the end.
@@ -1663,12 +1718,6 @@ function addSongControls() {
     updateSongNameDisplay(); // Initial call
 }
 
-const originalUpdateStatus = updateStatus;
-updateStatus = function() { // Patched updateStatus
-    originalUpdateStatus.apply(this, arguments);
-    // saveChordsToDB(); // REMOVED - rely on debounceSave in originalUpdateStatus
-};
-
 function setupAutoLoadOnSongChange() {
     window.addEventListener('hashchange', () => { loadChordsFromDB(); });
     // loadChordsFromDB(); // This will be called by initDB().then(...)
@@ -1723,12 +1772,25 @@ async function loadChordsFromDB() {
 }
 
 function loadChordFromSequence(index) {
-    const padNumber = Chords.sequence[index];
-    if (Chords.pads[padNumber]) {
-        const pad = Chords.pads[padNumber];
-        Chords.string = pad.chord ? [...(pad.bass || []), ...pad.chord] : (Array.isArray(pad) ? [...pad] : []);
+    const step = Chords.sequence[index];
+    if (step) {
+        if (Array.isArray(step)) {
+            Chords.string = [...step];
+        } else if (Chords.pads[step] && Chords.pads[step].chord) {
+            const pad = Chords.pads[step];
+            Chords.string = [...(pad.bass || []), ...pad.chord];
+        }
         updateStatus();
-        showNotification(`Seq Load: ${index + 1}/${Chords.sequence.length}`, 'info');
+        updateSequenceDisplay();
+        showNotification(`Loaded step ${index + 1}/${Chords.sequence.length}`, 'info');
+
+        // If in chord trigger mode, trigger the full chord output
+        if (isPadTriggerMode) {
+            const chordNotes = Chords.string.map(n => ({ pitch: n + transposeOffset + (fullChordOctaveOffset * 12), velocity: 100 }));
+            const tiltedNotes = applyVelocityTilt(chordNotes, 0); // Apply current tilt, don't change it
+            Chords.triggers[FULL_CHORD] = tiltedNotes.map(n => n.pitch);
+            sendChord(tiltedNotes.map(n => n.pitch), tiltedNotes[0]?.velocity || 100, MIDI_CHANNEL_MAIN, 'chord');
+        }
     }
 }
 
@@ -1786,6 +1848,121 @@ initDB().then(() => {
 
 // updateStatus(); // Called by loadChordsFromDB, so likely redundant here unless DB fails early.
                 // The one after UI creation handles pre-DB state.
+
+// Add sequence display functions
+function updateSequenceDisplay() {
+    const display = document.getElementById('sequence-display');
+    const modeIndicator = document.getElementById('sequence-mode-indicator');
+    const stepIndicator = document.getElementById('current-step-indicator');
+    
+    if (!display || !modeIndicator || !stepIndicator) return;
+    
+    // Update sequence steps
+    display.innerHTML = Chords.sequence.map((step, index) => {
+        let chordName;
+        if (Array.isArray(step)) {
+            chordName = detectChord(step.map(n => getNoteNameFromMIDI(n)));
+        } else if (Chords.pads[step] && Chords.pads[step].chord) {
+            chordName = detectChord(Chords.pads[step].chord.map(n => getNoteNameFromMIDI(n)));
+        } else {
+            chordName = 'Empty Step';
+        }
+        return `<div class="sequence-step ${index === Chords.sequenceIndex ? 'active' : ''}">
+            ${index + 1}: ${chordName || 'Chord'}
+        </div>`;
+    }).join('');
+    
+    // Update status indicators
+    modeIndicator.textContent = isSequenceMode ? '▶ Sequence Mode' : '⏸ Sequence Mode';
+    stepIndicator.textContent = `Step: ${Chords.sequenceIndex + 1}/${Chords.sequence.length}`;
+}
+
+function resetSequenceState() {
+    isRecordingSequence = false;
+    isSequenceMode = false;
+    pendingSequenceChord = null;
+    isWaitingForSequenceStepConfirmation = false;
+    Chords.sequenceIndex = 0;
+    updateSequenceDisplay();
+    showNotification('Sequence state reset', 'info');
+}
+
+function enterSequenceMode() {
+    if (Chords.sequence.length === 0) {
+        showNotification('No sequence to play', 'warning');
+        return;
+    }
+    isSequenceMode = true;
+    Chords.sequenceIndex = 0;
+    loadChordFromSequence(0);
+    updateSequenceDisplay();
+    showNotification('Sequence mode active', 'info');
+}
+
+function exitSequenceMode() {
+    isSequenceMode = false;
+    Chords.sequenceIndex = 0;
+    updateSequenceDisplay();
+    showNotification('Exited sequence mode', 'info');
+}
+
+// Modify the existing buttonManager registration
+buttonManager.registerSimultaneousGroup('sequence', [sequenceStartCC, sequenceNextCC], () => {
+    if (!isRecordingSequence) {
+        if (isSequenceMode) {
+            exitSequenceMode();
+        } else if (Chords.sequence.length > 0) {
+            enterSequenceMode();
+        }
+    }
+});
+
+// Add sequence display update to existing functions
+function updateStatus() {
+    const modeDisplayEl = document.getElementById("mode"); 
+    if (modeDisplayEl) {
+       modeDisplayEl.textContent = mode === MODE_STOP ? "STOP" : mode === MODE_RECORD ? "RECORD" : "PLAY";
+    } else {
+       console.warn("updateStatus: modeDisplay element not found!");
+    }
+    
+    if (mode === MODE_STOP) {
+        clearAllChordNotes();
+    }
+    
+    const currentChordForDisplay = mode === MODE_RECORD ? Chords.record : Chords.string;
+    const chordNotesText = currentChordForDisplay.length > 0 
+        ? currentChordForDisplay.map(note => getNoteNameFromMIDI(note)).join(' ')
+        : 'No Chord';
+    
+    const chordDisplayEl = document.getElementById('currentChord');
+    if (chordDisplayEl) chordDisplayEl.textContent = chordNotesText;
+    
+    const chordNameElement = document.getElementById('chordName');
+    if (chordNameElement) {
+        if (currentChordForDisplay.length > 0) {
+            const chordName = detectChord(currentChordForDisplay.map(note => getNoteNameFromMIDI(note)));
+            chordNameElement.textContent = chordName || 'Unknown Chord';
+        } else {
+            chordNameElement.textContent = '-';
+        }
+    }
+
+    const currentPianoContainer = document.getElementById('current-piano');
+    if (currentPianoContainer) {
+        const pianoKeys = currentPianoContainer.querySelectorAll('.piano-key');
+        pianoKeys.forEach(key => key.classList.remove('active'));
+        currentChordForDisplay.forEach(note => {
+            const key = currentPianoContainer.querySelector(`.piano-key[data-note="${note}"]`);
+            if (key) key.classList.add('active');
+        });
+    }
+    
+    // Add sequence display update
+    updateSequenceDisplay();
+    
+    debounceSave();
+}
 </script>
 </body>
 </html>
