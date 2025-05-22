@@ -372,6 +372,7 @@ const Chords = {
 // Add sequence mode state
 let isRecordingSequence = false;
 let isSequenceMode = false;
+let pendingSequenceChord = null; // Holds the chord for the current step in sequence record mode
 
 // Add sequence control CCs
 const sequenceStartCC = 115;    // Previous chord
@@ -1002,7 +1003,11 @@ buttonManager.registerButton(recordCC, {
     },
     onRelease: (duration) => {
         if (isRecordingSequence) {
-            // This part remains for sequence recording
+            // Finalize any pending chord on record release
+            if (pendingSequenceChord && pendingSequenceChord.length > 0) {
+                Chords.sequence.push([...pendingSequenceChord]);
+                pendingSequenceChord = null;
+            }
             isRecordingSequence = false;
             if (Chords.sequence.length > 0) { saveChordsToDB(); showNotification(`Sequence: ${Chords.sequence.length} chords`, 'success'); }
             else { showNotification('No chords in sequence', 'warning'); }
@@ -1055,6 +1060,7 @@ buttonManager.registerButton(recordCC, {
             isArmingSave = false; // Explicitly set isArmingSave to false when starting sequence recording
             selectedStoragePad = null;
             Chords.sequence = [];
+            pendingSequenceChord = null;
             showNotification('Sequence Recording Started', 'info');
         }
         // If already in MODE_RECORD, a hold might have other future meanings,
@@ -1198,6 +1204,17 @@ function handleMIDIMessage(ev) {
                     return;
                 }
             } else if (channel === MIDI_CHANNEL_MAIN) { // Other CCs or message types on main channel
+                // Sequence record step advance: CC 116/127
+                if (isRecordingSequence && type === MIDI_CONTROL_CHANGE && channel === MIDI_CHANNEL_MAIN && pitch === sequenceNextCC && value === 127) {
+                    if (pendingSequenceChord && pendingSequenceChord.length > 0) {
+                        Chords.sequence.push([...pendingSequenceChord]);
+                        pendingSequenceChord = null;
+                        showNotification(`Step recorded (${Chords.sequence.length})`, 'success');
+                    } else {
+                        showNotification('No chord selected for this step', 'warning');
+                    }
+                    return;
+                }
                 // General passthrough for other messages on the main channel if not arming save
                 if (!isArmingSave) {
                      send(ev.data, 'main');
@@ -1245,6 +1262,10 @@ function handleMIDIMessage(ev) {
 
                 if (type === MIDI_NOTE_ON) { // Note ON for pad
                     Chords.string = [...(padData.bass || []), ...padData.chord]; // Load chord
+                    if (isRecordingSequence) {
+                        // In sequence record mode, set pending chord to current selection
+                        pendingSequenceChord = [...Chords.string];
+                    }
                     if (isPadTriggerMode) {
                         const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * 12));
                         const notesToPlay = transposedChord.map(p => ({ pitch: p, velocity: value }));
