@@ -513,6 +513,8 @@ const activeOctaveKeys = new Set(); // Not actively used in provided logic, but 
 
 let isHoldingRecordButton = false; // Not actively used, ButtonManager handles hold.
 let isWaitingForStorageKey = false;
+let selectedStoragePad = null;
+let isArmingSave = false;
 
 let recordButtonPressTime = 0; // Not actively used, ButtonManager handles timing.
 let recordHoldCheckInterval = null; // Not actively used.
@@ -974,19 +976,84 @@ class ButtonManager {
 const buttonManager = new ButtonManager();
 
 buttonManager.registerButton(recordCC, {
-    onPress: () => { if (mode === MODE_RECORD) { isWaitingForStorageKey = true; showNotification('Hold record & press storage key', 'info'); } },
+    onPress: () => {
+        if (mode === MODE_RECORD) {
+            // User is already in record mode and presses Record again to arm a save.
+            isArmingSave = true;
+            selectedStoragePad = null; // Reset any previously selected pad.
+            showNotification('SAVE ARMED: Select a pad, then release Record button to save/finalize.', 'info');
+        } else {
+            // User is not in record mode. Pressing record here is the first step to either enter record mode
+            // or to perform a quick save if notes are played and a pad is selected before release.
+            // The actual mode change or save action is determined onRelease.
+            // We can provide some initial feedback.
+            // isArmingSave will be false here, which is correct.
+            showNotification('Record pressed. Release to enter Record Mode, or play notes, select pad & release to save.', 'info');
+        }
+    },
     onRelease: (duration) => {
-        if (isWaitingForStorageKey) { isWaitingForStorageKey = false; }
-        else if (duration < buttonManager.HOLD_THRESHOLD && !isRecordingSequence) {
-            mode = MODE_RECORD; isMainOutputMuted = false; Chords.record = []; updateStatus(); showNotification('RECORD Mode - Main unmuted', 'info');
-        } else if (isRecordingSequence) {
+        if (isRecordingSequence) {
+            // This part remains for sequence recording
             isRecordingSequence = false;
             if (Chords.sequence.length > 0) { saveChordsToDB(); showNotification(`Sequence: ${Chords.sequence.length} chords`, 'success'); }
             else { showNotification('No chords in sequence', 'warning'); }
-            mode = MODE_PLAY; isMainOutputMuted = true; updateStatus(); showNotification('PLAY Mode - Main muted', 'info');
+            mode = MODE_PLAY; isMainOutputMuted = true;
+            isArmingSave = false; // Reset arming state
+            selectedStoragePad = null; // Reset selected pad
+            updateStatus(); showNotification('PLAY Mode - Main muted', 'info');
+            return;
         }
+
+        if (isArmingSave === true) {
+            // Attempting to save a chord
+            if (selectedStoragePad !== null && Chords.record.length > 0) {
+                Chords.pads[selectedStoragePad] = { chord: [...Chords.record] };
+                // sendNoteOffs(Chords.record, MIDI_CHANNEL_MAIN, 'chord'); // Optional: turn off notes from output
+                showNotification(`Chord saved to pad ${selectedStoragePad}`, 'success');
+                Chords.record = []; // Clear the live recording after successful save
+                // Mode remains MODE_RECORD
+            } else if (selectedStoragePad === null && Chords.record.length > 0) {
+                showNotification('SAVE CANCELLED: Record released, no pad was selected.', 'warning');
+                // Chords.record remains, user is still in MODE_RECORD
+            } else if (Chords.record.length === 0 && selectedStoragePad !== null) {
+                showNotification(`SAVE CANCELLED: No notes in current chord to save to pad ${selectedStoragePad}.`, 'warning');
+            } else if (Chords.record.length === 0 && selectedStoragePad === null) {
+                showNotification('SAVE CANCELLED: No notes and no pad selected.', 'warning');
+            }
+            isArmingSave = false; // Always reset after a save attempt
+            selectedStoragePad = null; // Reset selected pad
+        } else if (duration < buttonManager.HOLD_THRESHOLD && mode !== MODE_RECORD) {
+            // Entering record mode for the first time (was not armed for saving)
+            mode = MODE_RECORD;
+            isMainOutputMuted = false;
+            Chords.record = []; // Clear any previous recording
+            isArmingSave = false; // Ensure it's false
+            selectedStoragePad = null; // Ensure it's null
+            showNotification('RECORD Mode activated. Play notes. Press Record again to arm saving.', 'info');
+        } else if (duration < buttonManager.HOLD_THRESHOLD && mode === MODE_RECORD && !isArmingSave) {
+            // User just tapped record quickly while already in record mode, but IS NOT arming save
+            // This case implies they didn't re-press Record to arm.
+            showNotification('In Record mode. Play notes, or press Record again to arm for saving.', 'info');
+        }
+        // Potential issue: What if user holds record to enter sequence mode, but isArmingSave was true?
+        // The onHold handler should probably set isArmingSave = false.
+
+        updateStatus(); // Update status to reflect cleared Chords.record or mode changes
     },
-    onHold: () => { if (!isRecordingSequence && mode !== MODE_RECORD) { isRecordingSequence = true; Chords.sequence = []; showNotification('Sequence Recording Started', 'info'); } }
+    onHold: () => {
+        if (!isRecordingSequence && mode !== MODE_RECORD) { // Current condition for starting sequence recording
+            isRecordingSequence = true;
+            isArmingSave = false; // Explicitly set isArmingSave to false when starting sequence recording
+            selectedStoragePad = null;
+            Chords.sequence = [];
+            showNotification('Sequence Recording Started', 'info');
+        }
+        // If already in MODE_RECORD, a hold might have other future meanings,
+        // but for now, ensure isArmingSave is false if it doesn't lead to sequence recording.
+        // else if (mode === MODE_RECORD) {
+        //   isArmingSave = false; // If hold doesn't do anything else, disarm.
+        // }
+    }
 });
 buttonManager.registerButton(playCC, { onPress: () => { mode = MODE_PLAY; isMainOutputMuted = true; updateStatus(); showNotification('PLAY Mode - Main muted', 'info'); } });
 buttonManager.registerButton(stopCC, { onPress: () => { mode = MODE_STOP; isMainOutputMuted = false; updateStatus(); showNotification('STOP Mode - Main unmuted', 'info'); } });
@@ -1073,32 +1140,63 @@ function handleMIDIMessage(ev) {
 
         if (mode === MODE_RECORD) {
             if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN) {
-                if (isWaitingForStorageKey) {
-                    const storageKey = PAD_MAP_1[pitch] || pitch;
-                    if (Chords.record.length > 0) {
-                        Chords.pads[storageKey] = { chord: [...Chords.record] };
-                        sendNoteOffs(Chords.record, MIDI_CHANNEL_MAIN, 'chord'); // Turn off recorded notes from output
-                        showNotification(`Chord saved to pad ${storageKey}`, 'success');
-                        Chords.record = []; updateStatus();
+                // Check if save is armed AND if the incoming note is a pad press
+                const potentialPadKey = PAD_MAP_1[pitch] || pitch; // Check if it's a pad key
+                // A simple check to see if potentialPadKey is in the values of PAD_MAP_1 or similar range if not mapped.
+                // This is a heuristic. A more robust check might involve a dedicated list of pad notes.
+                // For now, we assume any note can be a pad if PAD_MAP_1 doesn't map it.
+                // Consider if a note is more likely a musical note or a pad key.
+                // Let's assume for now that if isArmingSave is true, any NOTE_ON on channel 1 could be a pad.
+                // A better approach would be to have a distinct list of notes that are pads.
+                // For this iteration, we'll use the original PAD_MAP_1 or the pitch itself.
+
+                if (isArmingSave === true) {
+                    // If arming save, interpret NOTE_ON as pad selection
+                    selectedStoragePad = potentialPadKey;
+                    showNotification(`Pad ${selectedStoragePad} selected for save. Release Record to confirm.`, 'info');
+                    // Do not send this note to main output or record it as a musical note
+                    flashActivity('input'); // Still flash input activity
+                    updateKeyboard(pitch, true); // Show the pad press on the main keyboard UI if desired
+                    return; // Consume the event
+                } else {
+                    // Not arming save, so treat as musical note input for Chords.record
+                    send(ev.data, 'main'); // Passthrough to main output
+                    const noteIndex = Chords.record.indexOf(pitch);
+                    if (noteIndex === -1) {
+                        if (Chords.record.length < MAX_CHORD_NOTES) {
+                            Chords.record.push(pitch);
+                            Chords.record.sort((a, b) => a - b);
+                        }
+                    } else {
+                        Chords.record.splice(noteIndex, 1);
                     }
-                    isWaitingForStorageKey = false; return;
+                    updateStatus();
+                    showNotification(`${noteIndex === -1 ? 'Added' : 'Removed'} ${getNoteNameFromMIDI(pitch)} to current chord.`, 'info');
+                    return;
                 }
-                send(ev.data, 'main'); // Passthrough to main output
-                const noteIndex = Chords.record.indexOf(pitch);
-                if (noteIndex === -1) {
-                    if (Chords.record.length < MAX_CHORD_NOTES) { Chords.record.push(pitch); Chords.record.sort((a,b)=>a-b); }
-                } else { Chords.record.splice(noteIndex, 1); }
-                updateStatus(); showNotification(`${noteIndex === -1 ? 'Added' : 'Removed'} ${getNoteNameFromMIDI(pitch)}`, 'info');
+            } else if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
+                // Note OFF messages
+                if (isArmingSave === true) {
+                    // If arming save, NOTE_OFF for pads are generally ignored, or could potentially deselect a pad.
+                    // For now, ignore.
+                    flashActivity('input');
+                    updateKeyboard(pitch, false);
+                    return;
+                } else {
+                    // Pass through NOTE_OFF if not arming save (for musical notes)
+                    send(ev.data, 'main');
+                    // No direct change to Chords.record on NOTE_OFF in this design
+                    return;
+                }
+            } else if (channel === MIDI_CHANNEL_MAIN) { // Other CCs or message types on main channel
+                // General passthrough for other messages on the main channel if not arming save
+                if (!isArmingSave) {
+                     send(ev.data, 'main');
+                }
                 return;
             }
-            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
-                if (!isWaitingForStorageKey) send(ev.data, 'main'); // Passthrough
-                return;
-            }
-            // If not a note on/off on main channel, or if still waiting for key, it might fall through.
-            // However, button manager handles CCs. For other types of messages in record mode:
-            if(!isWaitingForStorageKey) send(ev.data, 'main'); // General passthrough for other messages in record mode
-            return;
+            // Messages on other channels or unhandled types on main channel in MODE_RECORD are implicitly dropped.
+            return; // Ensure other messages don't leak if not explicitly handled.
         }
 
         if (mode === MODE_PLAY) {
