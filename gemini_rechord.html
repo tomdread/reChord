@@ -1411,14 +1411,13 @@ function handleMIDIMessage(ev) {
                             sendChord(notesToPlay.map(n => n.pitch), value, MIDI_CHANNEL_MAIN, 'chord');
                         }
                         updateStatus(); showNotification(`Loaded pad ${padNumber}${isPadTriggerMode ? ' (triggered)' : ''}`, 'info');
-                        return;
-                    } else { // Note OFF for pad
+                    } else if (type === MIDI_NOTE_OFF) { // Note OFF for pad
                         if (isPadTriggerMode && Chords.triggers[padNumber]) {
                             sendNoteOffs(Chords.triggers[padNumber], MIDI_CHANNEL_MAIN, 'chord');
                             delete Chords.triggers[padNumber];
                         }
-                        return;
                     }
+                    return;
                 }
 
                 // String/Bass/Full Chord Triggers
@@ -1465,6 +1464,35 @@ function handleMIDIMessage(ev) {
                 // If no specific PLAY mode action taken, MIDI message is currently dropped
                 // as there is no final passthrough in PLAY mode. This is by design of previous structure.
                 // If general passthrough is desired in PLAY mode for unmapped keys, it needs to be added here.
+                
+                // Add general passthrough for note-off messages in PLAY mode
+                if (type === MIDI_NOTE_OFF) {
+                    send(ev.data, 'main');
+                    return;
+                }
+            }
+            
+            // Handle note-off messages first
+            if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
+                let targetOutput = null;
+                if (STRING_TRIGGERS.includes(pitch)) targetOutput = 'string';
+                else if (BASS_TRIGGERS.includes(pitch)) targetOutput = 'bass';
+                else if (pitch === FULL_CHORD) targetOutput = 'chord';
+                else if (pitch === FULL_STRING) targetOutput = 'string';
+
+                if (targetOutput && Chords.triggers[pitch]) {
+                    sendNoteOffs(Chords.triggers[pitch], MIDI_CHANNEL_MAIN, targetOutput);
+                    delete Chords.triggers[pitch];
+                }
+                
+                // Always pass through note-off messages to main output
+                send(ev.data, 'main');
+                return;
+            }
+            
+            // Handle note-on messages
+            if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && value > 0) {
+                // ... existing code ...
             }
         }
         // Messages not handled by STOP, RECORD, or PLAY logic (e.g. other CCs not managed by ButtonManager)
@@ -1538,13 +1566,19 @@ function sendChord(notes, vel, ch, outputType = 'chord') {
 
 function sendNoteOffs(notes, ch, outputType = 'chord') {
     const notesArray = Array.isArray(notes) ? notes : [notes];
+    if (!notesArray.length) return;
+
     if (outputType === 'chord') {
-        clearAllChordNotes(); // More robust for chord output
+        // For chord output, clear all currently playing notes
+        currentPlayingChordNotes.forEach(note => {
+            send([MIDI_NOTE_OFF | ((ch - 1) & 0x0F), note, 0], outputType);
+        });
+        currentPlayingChordNotes = [];
     } else {
+        // For other outputs, send note-offs for the specific notes
         notesArray.forEach(n => {
             const pitch = (typeof n === 'object' && 'pitch' in n) ? n.pitch : n;
             send([MIDI_NOTE_OFF | ((ch - 1) & 0x0F), pitch, 0], outputType);
-            // updateKeyboard handled by send()
         });
     }
 }
@@ -1799,14 +1833,10 @@ const STUCK_NOTE_TIMEOUT = 1000;
 
 function clearAllChordNotes() {
     if (currentOutputs.chord) {
+        // Only send note-offs for notes that are actually playing
         currentPlayingChordNotes.forEach(note => {
             send([MIDI_NOTE_OFF | ((MIDI_CHANNEL_MAIN - 1) & 0x0F), note, 0], 'chord');
-            // updateKeyboard(note, false, 'chord'); // Handled by send()
         });
-        for (let note = 0; note < 128; note++) { // Panic all notes on chord channel
-            send([MIDI_NOTE_OFF | ((MIDI_CHANNEL_MAIN - 1) & 0x0F), note, 0], 'chord');
-            // updateKeyboard(note, false, 'chord'); // Handled by send()
-        }
         currentPlayingChordNotes = [];
     }
 }

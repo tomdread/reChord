@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>reChord37.com Matrix (SVG Grid v2)</title>
+    <style>
+        :root {
+            --header-bg: #f2f2f2;
+            --row-hover-bg: #f5f5f5;
+            --highlight-color: gold;
+            --border-color: #ddd;
+            --radius: 4px;
+            --focus-outline-color: #2196F3;
+            
+            /* SVG Matrix Styles */
+            --svg-cell-size: 32px; /* Made cells bigger */
+            --svg-cell-gap: 5px;
+            --svg-cell-corner-radius: 4px;
+            --connection-on-color: #4CAF50;
+            --connection-off-color: #e0e0e0; /* Lighter gray for off */
+            --connection-off-stroke: #ccc;
+            --loopback-indicator-color: #ff9800; /* Orange for loopback indication */
+
+            /* Header Styles */
+            --header-text-color: #333;
+            --header-font-size: 0.75rem; /* Slightly larger header font */
+            --header-padding: 5px;
+            --max-header-width: 180px; /* Max width for output port names */
+        }
+        body {
+            background: #f9f9f9;
+            font-family: 'Courier New', Courier, monospace;
+            color: #222;
+            margin: 0;
+        }
+        #main {
+            padding: 15px; /* Reduced padding */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .port-selection {
+            display: flex;
+            gap: 15px; /* Reduced gap */
+            margin-bottom: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            width: 100%;
+            max-width: 800px; /* Limit width of port selection area */
+        }
+        .port-list {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 10px;
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+            flex: 1; /* Allow lists to grow */
+            min-width: 240px; /* Min width before wrapping */
+        }
+        .port-list h3 { margin: 0 0 10px 0; font-size: 0.9rem; }
+        ul { list-style: none; padding: 0; max-height: 120px; overflow-y: auto; width: 100%; border: 1px solid var(--border-color); margin: 0; }
+        ul li { margin: 3px 0; display: flex; align-items: center; gap: 6px; padding: 2px 4px; font-size: 0.8rem;}
+        ul li:hover { background: var(--row-hover-bg); }
+
+        .midi-activity { display: inline-block; width: 7px; height: 7px; background: #666; border-radius: 50%; transition: background-color 0.1s; }
+        .midi-activity.active { background: #4CAF50; box-shadow: 0 0 3px rgba(76,175,80,0.8); }
+
+        /* Matrix Layout */
+        #matrix-layout-container {
+            display: grid;
+            grid-template-areas:
+                ". input-headers"
+                "output-headers svg-grid";
+            grid-template-columns: auto 1fr; /* Output headers take auto width, SVG grid takes rest */
+            grid-template-rows: auto 1fr;    /* Input headers auto height, SVG grid takes rest */
+            gap: var(--svg-cell-gap);
+            margin-top: 15px;
+            align-items: start; /* Align items to the start of their grid areas */
+            max-width: 95vw;
+            overflow: auto; /* Scroll for very large matrices */
+        }
+
+        #matrixInputHeaders {
+            grid-area: input-headers;
+            display: flex;
+            position: sticky; /* Sticky input headers */
+            top: 0;
+            background: #f9f9f9; /* Match body background */
+            z-index: 10;
+            padding-bottom: var(--svg-cell-gap); /* Space below headers */
+             height: 50px; /* Fixed height for input headers area */
+        }
+        #matrixOutputHeaders {
+            grid-area: output-headers;
+            display: flex;
+            flex-direction: column;
+            position: sticky; /* Sticky output headers */
+            left: 0;
+            background: #f9f9f9; /* Match body background */
+            z-index: 5; /* Below input headers if they overlap */
+            padding-right: var(--svg-cell-gap);
+        }
+        .matrix-header-item {
+            display: flex;
+            align-items: center; /* Vertically center text */
+            font-size: var(--header-font-size);
+            color: var(--header-text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: var(--header-padding);
+            box-sizing: border-box;
+        }
+        #matrixInputHeaders .matrix-header-item {
+            width: var(--svg-cell-size);
+            margin-right: var(--svg-cell-gap);
+            justify-content: center; /* Center text for input headers */
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            max-height: 45px; /* Limit height of rotated text */
+            border-bottom: 1px solid var(--border-color); /* Visual separation */
+        }
+        #matrixOutputHeaders .matrix-header-item {
+            height: var(--svg-cell-size);
+            margin-bottom: var(--svg-cell-gap);
+            justify-content: flex-end; /* Align text to the right */
+            max-width: var(--max-header-width);
+            border-right: 1px solid var(--border-color); /* Visual separation */
+        }
+        /* Corner placeholder */
+        /* #matrix-layout-container > div:first-child (top-left empty cell) handled by grid */
+
+
+        #svgMatrixGridContainer {
+            grid-area: svg-grid;
+            overflow: auto; /* If SVG itself becomes too large */
+            border: 1px solid var(--border-color); /* Border around SVG area */
+        }
+        #svgMatrixGrid {
+            display: block;
+            outline: none;
+            background-color: white;
+        }
+        .matrix-cell-svg {
+            cursor: pointer;
+            stroke: var(--connection-off-stroke);
+            stroke-width: 1px;
+            transition: fill 0.1s ease, stroke 0.1s ease, transform 0.1s ease;
+        }
+        .matrix-cell-svg.connected { fill: var(--connection-on-color); stroke: var(--connection-on-color); }
+        .matrix-cell-svg.disconnected { fill: var(--connection-off-color); }
+        /* Loopback visual cue - now connectable */
+        .matrix-cell-svg.loopback-cell-visual {
+            /* Example: a small dot or different border if desired, for now just connectable */
+             /* stroke: var(--loopback-indicator-color); */
+        }
+        .matrix-cell-svg.highlight {
+            filter: drop-shadow(0 0 3px var(--highlight-color));
+            transform: scale(1.05); /* Slightly less scale */
+        }
+        .matrix-cell-svg:focus, .matrix-cell-svg.focused-programmatic {
+            outline: 2px solid var(--focus-outline-color);
+            outline-offset: 1px; /* Draw outline outside the cell */
+            stroke: var(--focus-outline-color);
+            stroke-width: 1.5px;
+        }
+
+        #notification-area { position: fixed; bottom: 20px; right: 20px; z-index: 1000; }
+        .notification { background: rgba(0,0,0,0.8); color: white; padding: 10px 15px; margin: 5px 0; border-radius: var(--radius); opacity: 1; transition: opacity 0.5s; font-size:0.85rem;}
+    </style>
+</head>
+
+<body>
+    <div id="main">
+        <h1>reChord37.com Matrix (SVG Grid v2)</h1>
+        <p>Actual Intelagence</p>
+        <section class="port-selection">
+            <div class="port-list"><h3>MIDI Inputs</h3><ul id="midiInputsList" role="listbox" aria-label="MIDI Input Devices"></ul></div>
+            <div class="port-list"><h3>MIDI Outputs</h3><ul id="midiOutputsList" role="listbox" aria-label="MIDI Output Devices"></ul></div>
+        </section>
+
+        <div id="matrix-layout-container">
+            <!-- Top-left empty cell for grid alignment, can be empty or styled -->
+            <div style="grid-area: '.';"></div> 
+            <div id="matrixInputHeaders"></div>
+            <div id="matrixOutputHeaders"></div>
+            <div id="svgMatrixGridContainer">
+                <svg id="svgMatrixGrid" tabindex="0" role="grid" aria-label="MIDI Routing Matrix"></svg>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification-area"></div>
+
+    <script>
+        const CONFIG = {
+            DEBOUNCE_DELAY_MS: 250, ACTIVITY_TIMEOUT_MS: 100, HIGHLIGHT_DURATION_MS: 150,
+            NOTIFICATION_DURATION_MS: 3000, NOTIFICATION_FADEOUT_MS: 500,
+            STORAGE_KEYS: { INPUTS: 'matrixSvgSelectedMidiInputIds_v2.1', OUTPUTS: 'matrixSvgSelectedMidiOutputIds_v2.1', CONNECTIONS: 'matrixSvgMidiConnections_v2.1' },
+            PORT_FILTER_EXCLUDE_TEXT: (localStorage.getItem('matrixPortFilterExcludeText') || 'network').trim().toLowerCase(),
+            SYSEX_ENABLED: true,
+            ID_PREFIX_INPUT_SELECTOR: 'in_sel_', ID_PREFIX_OUTPUT_SELECTOR: 'out_sel_',
+            ID_PREFIX_ACTIVITY_INPUT: 'act_in_', ID_PREFIX_ACTIVITY_OUTPUT: 'act_out_',
+            CHECKBOX_TYPE: 'checkbox', KEYNAV_PAGE_JUMP_ROWS: 5,
+            SVG: {
+                CELL_SIZE: 32, CELL_GAP: 5, CELL_CORNER_RADIUS: 4,
+                LOOPBACK_OPACITY: 1, // No longer visually dimmed if connectable
+            },
+            CSS_SVG_CELL_CLASS: 'matrix-cell-svg',
+        };
+
+        const AppState = {
+            midiAccess: null, allMidiInputs: [], allMidiOutputs: [],
+            midiInputsById: {}, midiOutputsById: {},
+            activityTimers: new Map(), debounceTimer: null,
+            lastFocusedMatrixCoords: { row: 0, col: 0 },
+            selectedInputIds: [], selectedOutputIds: [],
+        };
+
+        // DOMContentLoaded and Core Init Functions (largely unchanged)
+        document.addEventListener('DOMContentLoaded', () => {
+            if (navigator.requestMIDIAccess) {
+                navigator.requestMIDIAccess({ sysex: CONFIG.SYSEX_ENABLED }).then(initMidi).catch(err => {
+                    console.error("MIDI Access Failed:", err); showNotification('MIDI Access Failed.', 'error');
+                });
+            } else { showNotification('Web MIDI API not supported.', 'error'); }
+        });
+        function initMidi(midiAccess) { AppState.midiAccess = midiAccess; AppState.midiAccess.onstatechange = onStateChange; clearAllCorruptedStorage(); refreshPortListsAndUI(); showNotification('MIDI system initialized.', 'success'); }
+        function onStateChange(event) { showNotification(`MIDI state: ${event.port.name} (${event.port.state})`, 'info'); refreshPortListsAndUI(); }
+        
+        function refreshPortListsAndUI() {
+            refreshPortData(); populatePortSelectionLists();
+            const defaultsApplied = restorePortSelectionsFromStorage();
+            if (defaultsApplied) showNotification('Default ports selected.', 'info');
+            AppState.selectedInputIds = Array.from(document.getElementById('midiInputsList').querySelectorAll('input:checked')).map(cb => cb.value);
+            AppState.selectedOutputIds = Array.from(document.getElementById('midiOutputsList').querySelectorAll('input:checked')).map(cb => cb.value);
+            buildSvgRoutingMatrix(); setupMidiInputListeners(); loadConnectionsFromStorage(); initializeMatrixKeyboardNavigation();
+        }
+        function refreshPortData() {
+            const filter = CONFIG.PORT_FILTER_EXCLUDE_TEXT;
+            AppState.allMidiInputs = Array.from(AppState.midiAccess.inputs.values()).filter(i => filter ? !i.name.toLowerCase().includes(filter) : true);
+            AppState.allMidiOutputs = Array.from(AppState.midiAccess.outputs.values()).filter(o => filter ? !o.name.toLowerCase().includes(filter) : true);
+            AppState.midiInputsById = Object.fromEntries(AppState.allMidiInputs.map(i => [i.id, i]));
+            AppState.midiOutputsById = Object.fromEntries(AppState.allMidiOutputs.map(o => [o.id, o]));
+        }
+        function validateAndClearStorageItem(key, validator, desc) { try { const d = localStorage.getItem(key); if (d === null) return; const p = JSON.parse(d); if (!validator(p)) { localStorage.removeItem(key); showNotification(`Cleared corrupted ${desc} storage.`, 'warning');}} catch (e) { localStorage.removeItem(key); showNotification(`Cleared corrupted ${desc} (parse error).`, 'warning');}}
+        function clearAllCorruptedStorage() {
+            validateAndClearStorageItem(CONFIG.STORAGE_KEYS.CONNECTIONS, d => Array.isArray(d) && d.every(i => typeof i === 'object' && i !== null && 'in' in i && 'out' in i), 'connection');
+            validateAndClearStorageItem(CONFIG.STORAGE_KEYS.INPUTS, d => Array.isArray(d) && d.every(i => typeof i === 'string'), 'input selection');
+            validateAndClearStorageItem(CONFIG.STORAGE_KEYS.OUTPUTS, d => Array.isArray(d) && d.every(i => typeof i === 'string'), 'output selection');
+        }
+        function populatePortSelectionLists() {
+            const inUI = document.getElementById('midiInputsList'), outUI = document.getElementById('midiOutputsList'); inUI.innerHTML = ''; outUI.innerHTML = '';
+            AppState.allMidiInputs.forEach(p => createPortListItem(inUI, p, 'INPUT')); AppState.allMidiOutputs.forEach(p => createPortListItem(outUI, p, 'OUTPUT'));
+        }
+        function createPortListItem(listUI, port, type) {
+            const li = document.createElement('li'); li.setAttribute('role', 'option');
+            const cb = document.createElement('input'); cb.type = CONFIG.CHECKBOX_TYPE; cb.id = `${CONFIG[`ID_PREFIX_${type}_SELECTOR`]}${port.id}`; cb.value = port.id;
+            const act = document.createElement('span'); act.className = 'midi-activity'; act.id = `${CONFIG[`ID_PREFIX_ACTIVITY_${type}`]}${port.id}`;
+            const lbl = document.createElement('label'); lbl.htmlFor = cb.id; lbl.textContent = port.name;
+            cb.addEventListener('change', () => { li.setAttribute('aria-selected', cb.checked.toString()); handlePortSelectionChange(); });
+            li.append(cb, act, lbl); listUI.append(li);
+        }
+        function restorePortSelectionsFromStorage() {
+            let defaults = false; const inIds = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEYS.INPUTS) || 'null'), outIds = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEYS.OUTPUTS) || 'null');
+            const inUI = document.getElementById('midiInputsList'), outUI = document.getElementById('midiOutputsList');
+            if (Array.isArray(inIds)) inUI.querySelectorAll('input').forEach(cb => { cb.checked = inIds.includes(cb.value); cb.closest('li').setAttribute('aria-selected', cb.checked.toString()); }); else { selectAllPortsInList(inUI); defaults = true; }
+            if (Array.isArray(outIds)) outUI.querySelectorAll('input').forEach(cb => { cb.checked = outIds.includes(cb.value); cb.closest('li').setAttribute('aria-selected', cb.checked.toString()); }); else { selectAllPortsInList(outUI); defaults = true; }
+            return defaults;
+        }
+        function selectAllPortsInList(listEl) { listEl.querySelectorAll('input').forEach(cb => { cb.checked = true; cb.closest('li').setAttribute('aria-selected', 'true'); }); }
+        function handlePortSelectionChange() {
+            AppState.selectedInputIds = Array.from(document.getElementById('midiInputsList').querySelectorAll('input:checked')).map(cb => cb.value);
+            AppState.selectedOutputIds = Array.from(document.getElementById('midiOutputsList').querySelectorAll('input:checked')).map(cb => cb.value);
+            localStorage.setItem(CONFIG.STORAGE_KEYS.INPUTS, JSON.stringify(AppState.selectedInputIds));
+            localStorage.setItem(CONFIG.STORAGE_KEYS.OUTPUTS, JSON.stringify(AppState.selectedOutputIds));
+            buildSvgRoutingMatrix(); setupMidiInputListeners(); loadConnectionsFromStorage(); initializeMatrixKeyboardNavigation();
+        }
+
+        function buildSvgRoutingMatrix() {
+            const svgGrid = document.getElementById('svgMatrixGrid');
+            const outputHeadersDiv = document.getElementById('matrixOutputHeaders');
+            const inputHeadersDiv = document.getElementById('matrixInputHeaders');
+            svgGrid.innerHTML = ''; outputHeadersDiv.innerHTML = ''; inputHeadersDiv.innerHTML = '';
+
+            const inputs = AppState.selectedInputIds.map(id => AppState.midiInputsById[id]).filter(Boolean);
+            const outputs = AppState.selectedOutputIds.map(id => AppState.midiOutputsById[id]).filter(Boolean);
+
+            if (inputs.length === 0 || outputs.length === 0) {
+                svgGrid.setAttribute('width', '0'); svgGrid.setAttribute('height', '0'); return;
+            }
+
+            const { CELL_SIZE, CELL_GAP, CELL_CORNER_RADIUS } = CONFIG.SVG;
+            const totalCellAndGap = CELL_SIZE + CELL_GAP;
+            const svgWidth = inputs.length * totalCellAndGap - CELL_GAP;
+            const svgHeight = outputs.length * totalCellAndGap - CELL_GAP;
+
+            svgGrid.setAttribute('width', svgWidth);
+            svgGrid.setAttribute('height', svgHeight);
+            svgGrid.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+
+            // Create Headers
+            inputs.forEach(inPort => {
+                const headerItem = document.createElement('div');
+                headerItem.className = 'matrix-header-item';
+                headerItem.textContent = inPort.name;
+                headerItem.title = inPort.name;
+                inputHeadersDiv.appendChild(headerItem);
+            });
+            outputs.forEach(outPort => {
+                const headerItem = document.createElement('div');
+                headerItem.className = 'matrix-header-item';
+                headerItem.textContent = outPort.name;
+                headerItem.title = outPort.name;
+                outputHeadersDiv.appendChild(headerItem);
+            });
+            
+            // Create SVG Cells
+            outputs.forEach((outPort, rIdx) => {
+                inputs.forEach((inPort, cIdx) => {
+                    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rect.setAttribute('x', cIdx * totalCellAndGap);
+                    rect.setAttribute('y', rIdx * totalCellAndGap);
+                    rect.setAttribute('width', CELL_SIZE);
+                    rect.setAttribute('height', CELL_SIZE);
+                    rect.setAttribute('rx', CELL_CORNER_RADIUS);
+                    rect.setAttribute('ry', CELL_CORNER_RADIUS);
+                    rect.classList.add(CONFIG.CSS_SVG_CELL_CLASS, 'disconnected');
+                    rect.dataset.inId = inPort.id; rect.dataset.outId = outPort.id;
+                    rect.dataset.rowIdx = rIdx.toString(); rect.dataset.colIdx = cIdx.toString();
+                    rect.setAttribute('tabindex', '-1');
+                    rect.setAttribute('role', 'checkbox'); 
+                    rect.setAttribute('aria-checked', 'false');
+                    rect.setAttribute('aria-label', `Route ${inPort.name} to ${outPort.name}`);
+
+                    if (inPort.id === outPort.id) { // Use ID for true loopback check
+                        rect.classList.add('loopback-cell-visual'); // Visual cue, but still connectable
+                        // No longer disabling: rect.setAttribute('aria-disabled', 'true');
+                    }
+                    rect.addEventListener('click', handleSvgCellClick);
+                    svgGrid.appendChild(rect);
+                });
+            });
+            
+            const firstCell = svgGrid.querySelector(`.${CONFIG.CSS_SVG_CELL_CLASS}`);
+            if (firstCell) firstCell.setAttribute('tabindex', '0'); // First cell tabbable
+        }
+
+        function handleSvgCellClick(event) {
+            const cell = event.currentTarget;
+            // Loopback cells are now clickable
+            // if (cell.classList.contains('loopback')) return; 
+
+            const isConnected = cell.classList.toggle('connected');
+            cell.classList.toggle('disconnected', !isConnected);
+            cell.setAttribute('aria-checked', isConnected.toString());
+            saveConnectionsWithDebounce();
+        }
+
+        function setupMidiInputListeners() {
+            AppState.selectedInputIds.forEach(inId => {
+                const port = AppState.midiInputsById[inId]; if (!port) return;
+                port.onmidimessage = event => handleMidiMessage(event, inId);
+            });
+        }
+        function handleMidiMessage(event, inPortId) {
+            flashActivityIndicator(inPortId, 'in');
+            const connectedCells = document.querySelectorAll(`#svgMatrixGrid .${CONFIG.CSS_SVG_CELL_CLASS}.connected[data-in-id="${inPortId}"]`);
+            connectedCells.forEach(cell => {
+                const outPort = AppState.midiOutputsById[cell.dataset.outId]; if (!outPort) return;
+                try {
+                    outPort.send(event.data); flashActivityIndicator(cell.dataset.outId, 'out');
+                    cell.classList.add('highlight');
+                    setTimeout(() => cell.classList.remove('highlight'), CONFIG.HIGHLIGHT_DURATION_MS);
+                } catch (e) { console.error(`Send MIDI error to ${outPort.name}:`, e); showNotification(`Error sending to ${outPort.name}`, 'error'); }
+            });
+        }
+        function saveConnectionsWithDebounce() { clearTimeout(AppState.debounceTimer); AppState.debounceTimer = setTimeout(saveConnectionsToStorage, CONFIG.DEBOUNCE_DELAY_MS); }
+        function saveConnectionsToStorage() {
+            const conns = [];
+            document.querySelectorAll(`#svgMatrixGrid .${CONFIG.CSS_SVG_CELL_CLASS}.connected`).forEach(cell => {
+                conns.push({ in: cell.dataset.inId, out: cell.dataset.outId });
+            });
+            localStorage.setItem(CONFIG.STORAGE_KEYS.CONNECTIONS, JSON.stringify(conns));
+            showNotification('Connections saved.', 'success');
+        }
+        function loadConnectionsFromStorage() {
+            const savedConns = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEYS.CONNECTIONS) || '[]');
+            document.querySelectorAll(`#svgMatrixGrid .${CONFIG.CSS_SVG_CELL_CLASS}`).forEach(cell => {
+                cell.classList.remove('connected'); cell.classList.add('disconnected');
+                cell.setAttribute('aria-checked', 'false');
+            });
+            savedConns.forEach(conn => {
+                const cell = document.querySelector(`#svgMatrixGrid .${CONFIG.CSS_SVG_CELL_CLASS}[data-in-id="${conn.in}"][data-out-id="${conn.out}"]`);
+                if (cell) { // Loopbacks are now connectable, so no !cell.classList.contains('loopback')
+                    cell.classList.add('connected'); cell.classList.remove('disconnected');
+                    cell.setAttribute('aria-checked', 'true');
+                }
+            });
+        }
+
+        function initializeMatrixKeyboardNavigation() {
+            const svgGrid = document.getElementById('svgMatrixGrid');
+            if (!svgGrid || AppState.selectedInputIds.length === 0 || AppState.selectedOutputIds.length === 0) return;
+
+            const getCellAt = (r, c) => svgGrid.querySelector(`.${CONFIG.CSS_SVG_CELL_CLASS}[data-row-idx="${r}"][data-col-idx="${c}"]`);
+            const numRows = AppState.selectedOutputIds.length;
+            const numCols = AppState.selectedInputIds.length;
+
+            function focusCell(r, c) {
+                const targetCell = getCellAt(r, c);
+                if (targetCell) {
+                    const currentFocused = svgGrid.querySelector(`.${CONFIG.CSS_SVG_CELL_CLASS}[tabindex="0"]`);
+                    if (currentFocused) currentFocused.setAttribute('tabindex', '-1');
+                    targetCell.setAttribute('tabindex', '0');
+                    targetCell.focus(); // SVG elements can be focused if tabindex is set
+                    AppState.lastFocusedMatrixCoords = { row: r, col: c };
+                    return true;
+                }
+                return false;
+            }
+            
+            svgGrid.addEventListener('focusin', (event) => {
+                 if (event.target === svgGrid) { // If SVG container itself got focus (e.g. tabbing to it)
+                    focusCell(AppState.lastFocusedMatrixCoords.row, AppState.lastFocusedMatrixCoords.col);
+                 }
+            });
+
+            svgGrid.addEventListener('keydown', (event) => {
+                const activeEl = document.activeElement;
+                if (!activeEl || !activeEl.classList.contains(CONFIG.CSS_SVG_CELL_CLASS) || !svgGrid.contains(activeEl)) {
+                     if (activeEl === svgGrid && (event.key === ' ' || event.key === 'Enter')) { // If focus on SVG container
+                        focusCell(0,0); event.preventDefault();
+                     }
+                    return;
+                }
+
+                let { row: r, col: c } = AppState.lastFocusedMatrixCoords; // Use last focused for current position
+
+                switch (event.key) {
+                    case 'ArrowUp':    r = Math.max(0, r - 1); break;
+                    case 'ArrowDown':  r = Math.min(numRows - 1, r + 1); break;
+                    case 'ArrowLeft':  c = Math.max(0, c - 1); break;
+                    case 'ArrowRight': c = Math.min(numCols - 1, c + 1); break;
+                    case 'Home':       c = 0; if (event.ctrlKey) r = 0; break;
+                    case 'End':        c = numCols - 1; if (event.ctrlKey) r = numRows - 1; break;
+                    case 'PageUp':   r = Math.max(0, r - CONFIG.KEYNAV_PAGE_JUMP_ROWS); break;
+                    case 'PageDown': r = Math.min(numRows - 1, r + CONFIG.KEYNAV_PAGE_JUMP_ROWS); break;
+                    case ' ': case 'Enter':
+                        handleSvgCellClick({ currentTarget: activeEl });
+                        event.preventDefault(); return;
+                    default: return;
+                }
+
+                if (focusCell(r,c)) {
+                    event.preventDefault();
+                }
+            });
+            
+            setTimeout(() => focusCell(AppState.lastFocusedMatrixCoords.row, AppState.lastFocusedMatrixCoords.col), 0);
+        }
+
+        function showNotification(msg, type = 'info') { const a = document.getElementById('notification-area'); if (!a) return; const n = document.createElement('div'); n.className = `notification ${type}`; n.textContent = msg; a.append(n); setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), CONFIG.NOTIFICATION_FADEOUT_MS); }, CONFIG.NOTIFICATION_DURATION_MS); }
+        function flashActivityIndicator(portId, dir) { const id = `${dir === 'in' ? CONFIG.ID_PREFIX_ACTIVITY_INPUT : CONFIG.ID_PREFIX_ACTIVITY_OUTPUT}${portId}`; const el = document.getElementById(id); if (!el) return; if (AppState.activityTimers.has(id)) clearTimeout(AppState.activityTimers.get(id)); el.classList.add('active'); const tId = setTimeout(() => { el.classList.remove('active'); AppState.activityTimers.delete(id); }, CONFIG.ACTIVITY_TIMEOUT_MS); AppState.activityTimers.set(id, tId); }
+
+    </script>
+</body>
+</html>
