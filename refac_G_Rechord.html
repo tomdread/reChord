@@ -15,6 +15,53 @@
     --loopback-bg: #ffe6e6;
 }
 
+/* Add new styles for pad chords section */
+.pad-chords-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+}
+
+.pad-chords-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(2, auto);
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.pad-chord {
+    padding: 10px;
+    background: var(--header-bg);
+    border-radius: var(--radius);
+    font-family: monospace;
+    transition: all 0.2s ease;
+}
+
+.pad-chord.active {
+    background: var(--highlight);
+    box-shadow: 0 0 4px rgba(76,175,80,0.3);
+}
+
+.pad-chord .pad-number {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.pad-chord .chord-name {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 3px;
+}
+
+.pad-chord .chord-notes {
+    font-size: 0.8em;
+    color: #888;
+}
+
 body {
     background: #f9f9f9;
     font-family: 'Consolas', 'Menlo', 'Monaco', 'Liberation Mono', 'Lucida Console', 'DejaVu Sans Mono', 'Courier New', 'Courier', monospace !important;
@@ -44,6 +91,26 @@ p.tagline {
     box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
     padding: 16px 18px 10px 18px;
     margin-bottom: 18px;
+}
+
+.song-navigation {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.song-navigation button {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: white;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.song-navigation button:hover {
+    background: var(--header-bg);
 }
 
 #song-name { /* Moved from inline style */
@@ -314,6 +381,19 @@ select:disabled {
     font-size: 0.9em;
 }
 
+.channel-select {
+    margin-left: 8px;
+    padding: 2px 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: white;
+    font-size: 0.9em;
+}
+
+.port-label select {
+    margin-right: 4px;  /* Reduce right margin of port selectors */
+}
+
 </style>
 </head>
 <body>
@@ -321,6 +401,10 @@ select:disabled {
     <h1 class="page-title">reChord37.com reChord 0.5.0.1 Working on Sequencer</h1>
     <p class="tagline">Working In Harmony & Actual Intelligence</p>
     <div class="top-card">
+        <div class="song-navigation">
+            <button id="song-prev-btn" title="Load previous song">⟨ Prev Song</button>
+            <button id="song-next-btn" title="Load next song">Next Song ⟩</button>
+        </div>
         <div id="song-name"></div> <!-- Content set by JS -->
         <div class="status-line">
             Mode: <strong><span id="mode-display"></span></strong> <!-- Changed ID for clarity -->
@@ -526,6 +610,15 @@ const DEFAULT_OUTPUT_NAMES = {
     string: "IAC Driver miDiai03"
 };
 
+// === Default MIDI Channels ===
+const DEFAULT_CHANNELS = {
+    input: 0,  // 0 means all channels
+    main: 0,
+    bass: 0,
+    chord: 0,
+    string: 0
+};
+
 // === Pad Map ===
 // Pad map: MIDI note from controller -> Internal Pad Number (e.g., drum note like 36, 37)
 const PAD_MAP_1 = { 50: 36, 52: 37, 53: 38, 55: 39, 49: 40, 51: 41, 54: 42, 56: 43 };
@@ -565,8 +658,10 @@ let stringOctaveOffset = 0;
 let midiAccess;
 let currentInput = null;
 let currentOutputs = { main: null, bass: null, chord: null, string: null };
+let currentChannels = { ...DEFAULT_CHANNELS }; // Add channels state
 const lastPortStates = new Map(); // Tracks MIDI port connection states
 let portChangeTimeout = null;
+let isMIDIInitialized = false; // Add flag to track MIDI initialization status
 
 // IndexedDB
 let db;
@@ -859,13 +954,19 @@ function send(data, outputType = 'main') {
     
     try {
         const statusByte = data[0] & 0xF0;
-        if (statusByte === MIDI_NOTE_OFF) data[2] = VELOCITY_NOTE_OFF;
+        const channel = currentChannels[outputType];
+        // If channel is 0 (all channels), use the original channel from the message
+        // Otherwise, override with the configured channel
+        const newStatusByte = channel === 0 ? statusByte : statusByte | ((channel - 1) & 0x0F);
+        const newData = [newStatusByte, ...data.slice(1)];
+        
+        if (statusByte === MIDI_NOTE_OFF) newData[2] = VELOCITY_NOTE_OFF;
         // Note ON with velocity 0 is also a Note OFF, data[2] would already be 0.
 
-        output.send(data);
+        output.send(newData);
         flashActivity(`${outputType}-output`);
         
-        const [status, pitch, velocity] = data;
+        const [status, pitch, velocity] = newData;
         const type = status & 0xF0;
         if (type === MIDI_NOTE_ON || type === MIDI_NOTE_OFF) {
             updateKeyboard(pitch, type === MIDI_NOTE_ON && velocity > 0, outputType);
@@ -1203,10 +1304,6 @@ function handleMIDIMessage_PlayMode(rawData, type, channel, pitch, value) {
             }
 
             Chords.string = [...(padData.bass || []), ...padData.chord];
-            // If isRecordingSequence is true here, it means user is trying to build sequence using existing pads.
-            // This case is handled by the `isRecordingSequence && PAD_MAP_1[data1]` block before mode-specific handlers.
-            // So, `pendingSequenceChord` update here is likely redundant or for a different flow.
-            // if (isRecordingSequence) { pendingSequenceChord = [...Chords.string]; } 
             
             if (isPadTriggerMode) {
                 const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * OCTAVE_SEMITONES));
@@ -1388,6 +1485,7 @@ function onMIDISuccess(access) {
     
     refreshPortLists(); // This will also attempt to load/set saved/default ports
     showNotification('MIDI system initialized', 'success');
+    isMIDIInitialized = true; // Set flag when MIDI is initialized
 
     midiAccess.onstatechange = (e) => {
         const port = e.port;
@@ -1439,7 +1537,7 @@ function initDB() {
 }
 
 async function savePortSelections() {
-    if (!db) { /* console.warn('DB not ready for savePortSelections'); */ return; } // DB might not be ready on initial load
+    if (!db) return;
     return new Promise((resolve, reject) => {
         try {
             const tx = db.transaction(STORE_NAME_PORTS, 'readwrite');
@@ -1451,7 +1549,8 @@ async function savePortSelections() {
                     bass: currentOutputs.bass ? currentOutputs.bass.id : null,
                     chord: currentOutputs.chord ? currentOutputs.chord.id : null,
                     string: currentOutputs.string ? currentOutputs.string.id : null
-                }
+                },
+                channels: { ...currentChannels }
             };
             const request = store.put(portSelections, 'current');
             request.onsuccess = () => resolve();
@@ -1464,13 +1563,24 @@ async function savePortSelections() {
 }
 
 async function loadPortSelections() {
-    if (!db) await initDB(); // Ensure DB is initialized
+    if (!db) await initDB();
     return new Promise((resolve, reject) => {
         try {
             const tx = db.transaction(STORE_NAME_PORTS, 'readonly');
             const store = tx.objectStore(STORE_NAME_PORTS);
             const request = store.get('current');
-            request.onsuccess = (event) => resolve(event.target.result);
+            request.onsuccess = (event) => {
+                const data = event.target.result;
+                if (data && data.channels) {
+                    currentChannels = { ...DEFAULT_CHANNELS, ...data.channels };
+                    // Update channel selectors
+                    Object.entries(currentChannels).forEach(([type, channel]) => {
+                        const selector = document.getElementById(`${type}-channel`);
+                        if (selector) selector.value = channel;
+                    });
+                }
+                resolve(data);
+            };
             request.onerror = (event) => reject(event.target.error);
         } catch (err) {
             console.error("Error in loadPortSelections transaction:", err);
@@ -1480,6 +1590,7 @@ async function loadPortSelections() {
 }
 
 function debounceSave() {
+    if (!isMIDIInitialized) return; // Don't save until MIDI is initialized
     if (saveTimeout) clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
         saveChordsToDB().catch(console.error);
@@ -1506,28 +1617,6 @@ async function saveChordsToDB() {
                 saveIndicator.style.opacity = '0'; 
                 setTimeout(() => saveIndicator.remove(), 300); 
             }, SAVE_INDICATOR_DURATION);
-
-            // Update notes area with pad chords list - current logic tries to preserve user notes.
-            // This part can be complex and might need rethinking for better UX.
-            if (domElements.songNotesTextarea) {
-                let padLines = Object.entries(Chords.pads)
-                    .filter(([, obj]) => obj && Array.isArray(obj.chord) && obj.chord.length > 0)
-                    .map(([pad, obj]) => {
-                        const chordName = typeof detectChord === 'function' ? detectChord(obj.chord.map(getNoteNameFromMIDI)) : 'Chord';
-                        const noteNames = obj.chord.map(getNoteNameFromMIDI).join(' ');
-                        return `Pad ${pad}: ${chordName || 'Chord'} (${noteNames})`;
-                    });
-                // Attempt to separate user notes from auto-generated content.
-                // This assumes user notes are before a "double newline" or the auto-generated block.
-                let userNotes = domElements.songNotesTextarea.value.split(/\n\n-{5,}\n/)[0] || domElements.songNotesTextarea.value.split(/\n-{5,}\n/)[0] || domElements.songNotesTextarea.value;
-                
-                if (padLines.length > 0) {
-                    const separator = '\n\n----------\n'; // More distinct separator
-                    domElements.songNotesTextarea.value = userNotes.trim() + separator + padLines.join('\n');
-                } else {
-                    domElements.songNotesTextarea.value = userNotes.trim(); // Just user notes if no pads
-                }
-            }
             resolve();
         };
         request.onerror = (event) => { 
@@ -1728,28 +1817,10 @@ function updateStatus() {
     
     updateChordDisplay();
     updateCurrentPianoView(); // Update the "current-piano" display
-    
-    // Update song notes with current chord (live log like behavior)
-    // This behavior might be changed based on desired UX.
-    if (domElements.songNotesTextarea) {
-        const currentChordForDisplay = (mode === MODE_RECORD) ? Chords.record : Chords.string;
-        if (currentChordForDisplay.length > 0) {
-            const noteNames = currentChordForDisplay.map(getNoteNameFromMIDI).join(' ');
-            const chordLine = `Chord: ${noteNames}`;
-            const notesLines = domElements.songNotesTextarea.value.split('\n');
-            while (notesLines.length > 0 && notesLines[notesLines.length-1].trim() === '') notesLines.pop();
-            const lastLine = notesLines.length > 0 ? notesLines[notesLines.length-1] : '';
-            if (lastLine !== chordLine) { // Avoid duplicate appends
-                domElements.songNotesTextarea.value = domElements.songNotesTextarea.value.replace(/(\n)*$/, '') + 
-                                                     (domElements.songNotesTextarea.value.trim().length ? '\n' : '') + 
-                                                     chordLine + '\n';
-            }
-        }
-    }
-    
     updateInversionDisplay();
     updateTiltDisplay();
     updateSequenceDisplay();
+    updatePadChordsDisplay(); // Add this line
     
     debounceSave(); // Save song data (pads, sequence, notes)
 }
@@ -1799,27 +1870,69 @@ function createPianoSectionsDOM() {
 
         if (type === 'main') {
             const mainControls = document.createElement('div');
-            mainControls.className = 'main-midi-controls port-controls'; // Styled by CSS
+            mainControls.className = 'main-midi-controls port-controls';
             
-            const inputGroup = document.createElement('div'); inputGroup.className = 'port-label';
-            inputGroup.innerHTML = `<span class="port-status disconnected"></span> MIDI Input: <span class="midi-activity" id="input-activity"></span>`;
-            const inputSelect = document.createElement('select'); inputSelect.id = 'inputs'; // Cached as domElements.inputsSelect
-            inputGroup.appendChild(inputSelect); mainControls.appendChild(inputGroup);
+            const inputGroup = document.createElement('div'); 
+            inputGroup.className = 'port-label';
+            inputGroup.innerHTML = `
+                <span class="port-status disconnected"></span> 
+                MIDI Input: 
+                <span class="midi-activity" id="input-activity"></span>
+            `;
+            const inputSelect = document.createElement('select'); 
+            inputSelect.id = 'inputs';
+            inputGroup.appendChild(inputSelect);
+            const inputChannelSelect = document.createElement('select');
+            inputChannelSelect.className = 'channel-select';
+            inputChannelSelect.id = 'input-channel';
+            inputChannelSelect.innerHTML = Array.from({length: 17}, (_, i) => 
+                `<option value="${i}" ${i === 0 ? 'selected' : ''}>${i === 0 ? 'All' : i}</option>`
+            ).join('');
+            inputGroup.appendChild(inputChannelSelect);
+            mainControls.appendChild(inputGroup);
 
-            const outputGroup = document.createElement('div'); outputGroup.className = 'port-label';
-            outputGroup.innerHTML = `<span class="port-status disconnected"></span> Main Passthru: <span class="midi-activity" id="main-output-activity"></span>`;
-            const outputSelect = document.createElement('select'); outputSelect.id = 'outputs'; // Cached as domElements.mainOutputsSelect
-            outputGroup.appendChild(outputSelect); mainControls.appendChild(outputGroup);
+            const outputGroup = document.createElement('div'); 
+            outputGroup.className = 'port-label';
+            outputGroup.innerHTML = `
+                <span class="port-status disconnected"></span> 
+                Main Passthru: 
+                <span class="midi-activity" id="main-output-activity"></span>
+            `;
+            const outputSelect = document.createElement('select'); 
+            outputSelect.id = 'outputs';
+            outputGroup.appendChild(outputSelect);
+            const outputChannelSelect = document.createElement('select');
+            outputChannelSelect.className = 'channel-select';
+            outputChannelSelect.id = 'main-channel';
+            outputChannelSelect.innerHTML = Array.from({length: 17}, (_, i) => 
+                `<option value="${i}" ${i === 0 ? 'selected' : ''}>${i === 0 ? 'All' : i}</option>`
+            ).join('');
+            outputGroup.appendChild(outputChannelSelect);
+            mainControls.appendChild(outputGroup);
             section.appendChild(mainControls);
         }
         
         if (['bass', 'chord', 'string'].includes(type)) {
             const outputSelectorContainer = document.createElement('div');
-            outputSelectorContainer.className = 'output-selector-container port-controls'; // Styled by CSS
-            const label = document.createElement('div'); label.className = 'port-label';
-            label.innerHTML = `<span class="port-status disconnected"></span> ${info.title}: <span class="midi-activity" id="${type}-output-activity"></span>`;
-            const select = document.createElement('select'); select.id = `${type}-outputs`; // Cached as domElements.bassOutputsSelect etc.
-            label.appendChild(select); outputSelectorContainer.appendChild(label);
+            outputSelectorContainer.className = 'output-selector-container port-controls';
+            const label = document.createElement('div'); 
+            label.className = 'port-label';
+            label.innerHTML = `
+                <span class="port-status disconnected"></span> 
+                ${info.title}: 
+                <span class="midi-activity" id="${type}-output-activity"></span>
+            `;
+            const select = document.createElement('select'); 
+            select.id = `${type}-outputs`;
+            label.appendChild(select);
+            const channelSelect = document.createElement('select');
+            channelSelect.className = 'channel-select';
+            channelSelect.id = `${type}-channel`;
+            channelSelect.innerHTML = Array.from({length: 17}, (_, i) => 
+                `<option value="${i}" ${i === 0 ? 'selected' : ''}>${i === 0 ? 'All' : i}</option>`
+            ).join('');
+            label.appendChild(channelSelect);
+            outputSelectorContainer.appendChild(label);
             section.appendChild(outputSelectorContainer);
         }
         pianoSectionsContainer.appendChild(section);
@@ -1910,21 +2023,8 @@ function countWhiteKeysInPianoRange(startNote, endNote) {
 }
 
 function addSongControlsDOM() {
-    const navDiv = document.createElement('div');
-    navDiv.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 10px;';
-
-    const prevBtn = document.createElement('button');
-    prevBtn.textContent = '⟨ Prev Song'; prevBtn.id = 'song-prev-btn'; prevBtn.title = 'Load previous song';
-    const nextBtn = document.createElement('button');
-    nextBtn.textContent = 'Next Song ⟩'; nextBtn.id = 'song-next-btn'; nextBtn.title = 'Load next song';
-    navDiv.appendChild(prevBtn); navDiv.appendChild(nextBtn);
-
-    prevBtn.onclick = () => { if (mode === MODE_STOP) loadPreviousSong(); else showNotification('Stop mode required for song navigation.', 'info'); };
-    nextBtn.onclick = () => { if (mode === MODE_STOP) loadNextSong(); else showNotification('Stop mode required for song navigation.', 'info'); };
-
     const controlsDiv = document.createElement('div');
     controlsDiv.className = 'song-controls';
-    controlsDiv.appendChild(navDiv);
 
     const notesLabel = document.createElement('label');
     notesLabel.textContent = 'Song Notes / Ideas:'; 
@@ -1938,6 +2038,15 @@ function addSongControlsDOM() {
 
     controlsDiv.appendChild(notesLabel);
     controlsDiv.appendChild(notesTextarea);
+
+    // Add pad chords section
+    const padChordsSection = document.createElement('div');
+    padChordsSection.className = 'pad-chords-section';
+    padChordsSection.innerHTML = `
+        <h3>Pad Chords</h3>
+        <div id="pad-chords-grid" class="pad-chords-grid"></div>
+    `;
+    controlsDiv.appendChild(padChordsSection);
 
     // Insert after sequence section, before piano sections
     const sequenceSection = document.querySelector('.sequence-section');
@@ -1956,7 +2065,41 @@ function updateSongNameDisplayInUI() {
     if (domElements.songNameDisplay) domElements.songNameDisplay.textContent = `Song: ${songName || 'default'}`;
 }
 
+function updatePadChordsDisplay() {
+    const grid = document.getElementById('pad-chords-grid');
+    if (!grid) return;
 
+    // Create array of pad numbers (36-43)
+    const padNumbers = Array.from({length: 8}, (_, i) => i + 36);
+    
+    grid.innerHTML = padNumbers.map(padNumber => {
+        const padData = Chords.pads[padNumber];
+        let chordName = 'Empty';
+        let chordNotes = '';
+        let isActive = false;
+        
+        if (padData && padData.chord && padData.chord.length > 0) {
+            const notes = padData.chord.map(getNoteNameFromMIDI);
+            chordName = typeof detectChord === 'function' ? detectChord(notes) : 'Chord';
+            chordNotes = notes.join(' ');
+            
+            // Check if this pad is currently active (matches current chord)
+            if (Chords.string.length > 0) {
+                const currentNotes = Chords.string.map(getNoteNameFromMIDI);
+                isActive = notes.length === currentNotes.length && 
+                          notes.every(note => currentNotes.includes(note));
+            }
+        }
+        
+        return `
+            <div class="pad-chord ${isActive ? 'active' : ''}">
+                <div class="pad-number">Pad ${padNumber}</div>
+                <div class="chord-name">${chordName}</div>
+                <div class="chord-notes">${chordNotes}</div>
+            </div>
+        `;
+    }).join('');
+}
 
 function registerButtons() {
     buttonManager.registerButton(CC_RECORD, {
@@ -2138,6 +2281,18 @@ function initMIDIPortControls() {
             };
         }
     });
+
+    // Add channel change handlers
+    ['input', 'main', 'bass', 'chord', 'string'].forEach(type => {
+        const selector = document.getElementById(`${type}-channel`);
+        if (selector) {
+            selector.onchange = () => {
+                currentChannels[type] = parseInt(selector.value);
+                savePortSelections();
+                showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} channel: ${currentChannels[type] === 0 ? 'All' : currentChannels[type]}`, 'info');
+            };
+        }
+    });
 }
 
 
@@ -2190,6 +2345,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         console.error('Failed to initialize IndexedDB or load initial song:', error);
         showNotification('Failed to initialize storage system. Saved data may not be available.', 'error');
+    }
+
+    // Add event listeners for song navigation buttons
+    const prevBtn = document.getElementById('song-prev-btn');
+    const nextBtn = document.getElementById('song-next-btn');
+    if (prevBtn) {
+        prevBtn.onclick = () => { if (mode === MODE_STOP) loadPreviousSong(); else showNotification('Stop mode required for song navigation.', 'info'); };
+    }
+    if (nextBtn) {
+        nextBtn.onclick = () => { if (mode === MODE_STOP) loadNextSong(); else showNotification('Stop mode required for song navigation.', 'info'); };
     }
 });
 
