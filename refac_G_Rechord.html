@@ -1107,19 +1107,23 @@ buttonManager.registerSimultaneousGroup('sequenceModeToggle', [CC_SEQUENCE_PREV,
     }
 });
 buttonManager.registerButton(CC_SEQUENCE_PREV, {
-    onPress: () => { 
+    onPress: async () => { 
         if (isSequenceMode && Chords.sequence.length > 0 && !isRecordingSequence) {
             Chords.sequenceIndex = (Chords.sequenceIndex - 1 + Chords.sequence.length) % Chords.sequence.length; 
             loadChordFromSequence(Chords.sequenceIndex); 
+        } else if (mode === MODE_STOP && !isSequenceMode && !isRecordingSequence) {
+            await loadPreviousSong();
         }
     },
     simultaneousGroup: 'sequenceModeToggle'
 });
 buttonManager.registerButton(CC_SEQUENCE_NEXT, {
-    onPress: () => { 
+    onPress: async () => { 
         if (isSequenceMode && Chords.sequence.length > 0 && !isRecordingSequence) {
             Chords.sequenceIndex = (Chords.sequenceIndex + 1) % Chords.sequence.length; 
             loadChordFromSequence(Chords.sequenceIndex); 
+        } else if (mode === MODE_STOP && !isSequenceMode && !isRecordingSequence) {
+            await loadNextSong();
         }
     },
     simultaneousGroup: 'sequenceModeToggle'
@@ -1695,9 +1699,32 @@ function getSongNameFromHash() {
 }
 
 function addSongControls() {
+    // --- Song Navigation UI ---
+    const navDiv = document.createElement('div');
+    navDiv.style.display = 'flex';
+    navDiv.style.alignItems = 'center';
+    navDiv.style.gap = '10px';
+    navDiv.style.marginBottom = '10px';
+
+    const prevBtn = document.createElement('button');
+    prevBtn.textContent = '⟨ Prev Song';
+    prevBtn.id = 'song-prev-btn';
+    prevBtn.title = 'Load previous song';
+    const nextBtn = document.createElement('button');
+    nextBtn.textContent = 'Next Song ⟩';
+    nextBtn.id = 'song-next-btn';
+    nextBtn.title = 'Load next song';
+    navDiv.appendChild(prevBtn);
+    navDiv.appendChild(nextBtn);
+
+    prevBtn.onclick = () => { if (mode === MODE_STOP) loadPreviousSong(); else showNotification('Stop mode required for song navigation.', 'info'); };
+    nextBtn.onclick = () => { if (mode === MODE_STOP) loadNextSong(); else showNotification('Stop mode required for song navigation.', 'info'); };
+
+    // Insert navigation above notes
     const controlsDiv = document.createElement('div');
     controlsDiv.className = 'song-controls';
-    
+    controlsDiv.appendChild(navDiv);
+
     const notesLabel = document.createElement('label');
     notesLabel.textContent = 'Song Notes / Ideas:'; 
     notesLabel.style.fontWeight = 'bold'; 
@@ -1708,15 +1735,16 @@ function addSongControls() {
     notesTextarea.id = 'song-notes'; 
     notesTextarea.rows = 4; 
     notesTextarea.placeholder = 'Write your notes, lyrics, or ideas...';
+    // Ensure notes are saved when edited
     notesTextarea.addEventListener('input', debounceSave);
-    
-    controlsDiv.appendChild(notesLabel); 
+
+    controlsDiv.appendChild(notesLabel);
     controlsDiv.appendChild(notesTextarea);
-    
+
     const pianoSections = document.getElementById('piano-sections');
     if (pianoSections && pianoSections.parentNode) {
         pianoSections.parentNode.insertBefore(controlsDiv, pianoSections.nextSibling);
-    } else { // Fallback if piano-sections isn't there for some reason
+    } else {
         document.body.appendChild(controlsDiv);
     }
     
@@ -1728,6 +1756,55 @@ function addSongControls() {
     window.addEventListener('hashchange', updateSongNameDisplay);
     updateSongNameDisplay(); // Initial call
 }
+
+// --- IndexedDB: Get all song names ---
+async function getAllSongNamesFromDB() {
+    if (!db) await initDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME_SONGS, 'readonly');
+        const store = tx.objectStore(STORE_NAME_SONGS);
+        const req = store.getAllKeys ? store.getAllKeys() : store.getAll ? store.getAll(null, 0) : null;
+        if (!req) { reject('IndexedDB getAllKeys not supported'); return; }
+        req.onsuccess = () => {
+            // getAllKeys returns array of keys; getAll returns array of values (not used here)
+            resolve(req.result);
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// --- Song navigation logic ---
+async function loadNextSong() {
+    const songNames = await getAllSongNamesFromDB();
+    if (!songNames.length) { showNotification('No songs available.', 'warning'); return; }
+    const current = getSongNameFromHash();
+    let idx = songNames.indexOf(current);
+    if (idx === -1) idx = 0;
+    const nextIdx = (idx + 1) % songNames.length;
+    if (songNames[nextIdx] !== current) {
+        window.location.hash = 'song=' + encodeURIComponent(songNames[nextIdx]);
+    } else {
+        showNotification('Already at last song. Cycling to first.', 'info');
+        window.location.hash = 'song=' + encodeURIComponent(songNames[0]);
+    }
+}
+
+async function loadPreviousSong() {
+    const songNames = await getAllSongNamesFromDB();
+    if (!songNames.length) { showNotification('No songs available.', 'warning'); return; }
+    const current = getSongNameFromHash();
+    let idx = songNames.indexOf(current);
+    if (idx === -1) idx = 0;
+    const prevIdx = (idx - 1 + songNames.length) % songNames.length;
+    if (songNames[prevIdx] !== current) {
+        window.location.hash = 'song=' + encodeURIComponent(songNames[prevIdx]);
+    } else {
+        showNotification('Already at first song. Cycling to last.', 'info');
+        window.location.hash = 'song=' + encodeURIComponent(songNames[songNames.length - 1]);
+    }
+}
+
+    // (No change here, just removing the duplicate block below)
 
 function setupAutoLoadOnSongChange() {
     window.addEventListener('hashchange', () => { 
@@ -1761,6 +1838,23 @@ async function saveChordsToDB() {
                 saveIndicator.style.opacity = '0'; 
                 setTimeout(() => saveIndicator.remove(), 300); 
             }, SAVE_INDICATOR_DURATION);
+
+            // --- Update notes area with pad chords list ---
+            if (notesArea) {
+                let padLines = Object.entries(Chords.pads)
+                    .filter(([pad, obj]) => obj && Array.isArray(obj.chord) && obj.chord.length > 0)
+                    .map(([pad, obj]) => {
+                        const chordName = detectChord(obj.chord.map(getNoteNameFromMIDI));
+                        const noteNames = obj.chord.map(getNoteNameFromMIDI).join(' ');
+                        return `Pad ${pad}: ${chordName} (${noteNames})`;
+                    });
+                let userNotes = notesArea.value.split(/\n{2,}/)[0] || notesArea.value;
+                if (userNotes.trim() && padLines.length > 0) {
+                    notesArea.value = userNotes.replace(/\n+$/, '') + '\n\n----------\n' + padLines.join('\n');
+                } else if (padLines.length > 0) {
+                    notesArea.value = '----------\n' + padLines.join('\n');
+                }
+            }
             resolve();
         };
         request.onerror = () => { 
@@ -1938,6 +2032,22 @@ function updateStatus() {
     
     // Determine which chord to display as "current"
     const currentChordForDisplay = (mode === MODE_RECORD) ? Chords.record : Chords.string;
+
+    // --- Append chord notes to Song Notes / Ideas section ---
+    const notesArea = document.getElementById('song-notes');
+    if (notesArea && currentChordForDisplay && currentChordForDisplay.length > 0) {
+        const noteNames = currentChordForDisplay.map(getNoteNameFromMIDI).join(' ');
+        const chordLine = `Chord: ${noteNames}`;
+        // Only append if not already present as last chord line
+        const notesLines = notesArea.value.split('\n');
+        // Remove trailing empty lines
+        while (notesLines.length > 0 && notesLines[notesLines.length-1].trim() === '') notesLines.pop();
+        const lastLine = notesLines.length > 0 ? notesLines[notesLines.length-1] : '';
+        if (lastLine !== chordLine) {
+            notesArea.value = notesArea.value.replace(/(\n)*$/, '') + (notesArea.value.length ? '\n' : '') + chordLine + '\n';
+        }
+    }
+
     const chordNotesText = currentChordForDisplay.length > 0 
         ? currentChordForDisplay.map(note => getNoteNameFromMIDI(note)).join(' ')
         : 'No Chord';
@@ -1976,6 +2086,13 @@ function updateStatus() {
 
 // ————— Kick things off (Revised Order) —————
 document.addEventListener('DOMContentLoaded', () => {
+    // Keyboard navigation: left/right arrow for prev/next song in STOP mode
+    window.addEventListener('keydown', async (e) => {
+        if (mode !== MODE_STOP) return;
+        if (document.activeElement && (document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT')) return;
+        if (e.key === 'ArrowLeft') { e.preventDefault(); await loadPreviousSong(); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); await loadNextSong(); }
+    });
     createPianoSections();
     createPianoKeyboard();
     addSongControls();
