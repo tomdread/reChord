@@ -1,0 +1,2261 @@
+pleae run the prompt 
+
+Excellent. Here’s a modular LLM prompt template that breaks down your original reChord HTML/JS app into clean, Logic Scripter-ready modules.
+
+You can paste your old code below this prompt and get a targeted Logic Pro version from any capable LLM:
+
+⸻
+
+💡 Prompt: Convert reChord Web App Logic to Logic Pro Scripter Modules
+
+I have a browser-based MIDI chord tool called reChord. Below is the code (HTML + JS). I want to convert it into a Logic Pro Scripter plugin with no UI. The new script must retain core musical features, but leverage Logic Pro’s environment for routing and interface.
+
+Please extract and port the following modules into a clean Scripter-compatible JavaScript format:
+
+⸻
+
+🎹 Module 1: Chord Memory & Playback
+	•	Store chords triggered during recording.
+	•	Save chords to pads (use MIDI note numbers as pad IDs).
+	•	Trigger chords via MIDI notes.
+	•	Support sending note-offs on release.
+
+⸻
+
+🔄 Module 2: Chord Inversion Handling
+	•	Cycle through inversions each time a pad is triggered.
+	•	Keep root and fifth in bass (if possible).
+	•	Allow inversion reset via a MIDI CC or note.
+
+⸻
+
+🎚 Module 3: Velocity Tilt
+	•	Implement velocity tilt logic using a MIDI CC.
+	•	Tilt pivots chord velocity dynamically around the middle note.
+	•	CC 75 can be used for controlling tilt (-1.0 to +1.0 range mapped to 1–127).
+
+⸻
+
+📦 Module 4: MIDI Event Routing
+	•	Intercept MIDI NoteOn and NoteOff.
+	•	Route all non-trigger MIDI events directly to Output.
+	•	Suppress NoteOffs only for triggered chords (if needed).
+
+⸻
+
+🛠 Module 6: Constants & State
+	•	Define MIDI trigger notes (e.g., pad 36–43).
+	•	Define default channel, CC mappings.
+	•	Track inversion index, tilt amount, transpose offset if used.
+
+⸻
+
+🧪 Output Format
+
+Please return:
+	•	One complete .js file ready to paste into Logic Pro’s Scripter.
+	•	Use HandleMIDI, ProcessMIDI, and Logic’s API (e.g. NoteOn, ControlChange, etc).
+	•	Add helpful Trace() statements to confirm chords are being sent correctly.
+
+⸻
+
+due to port limitaions, the output of the full chord, bass and strings should use channel numbers instead of ports
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>reChord37.com reChord</title>
+<style>
+:root {
+    --cell-padding: 8px;
+    --header-bg: #f2f2f2;
+    --row-hover: #f5f5f5;
+    --highlight: #d1ffd1;
+    --border: #ddd;
+    --radius: 4px;
+    --loopback-bg: #ffe6e6;
+}
+
+body {
+    background: #f9f9f9;
+    font-family: 'Consolas', 'Menlo', 'Monaco', 'Liberation Mono', 'Lucida Console', 'DejaVu Sans Mono', 'Courier New', 'Courier', monospace !important;
+    color: #222;
+    margin: 0;
+    padding: 20px;
+    line-height: 1.4;
+}
+
+h1.page-title {
+    font-family: 'Courier New', Courier, monospace; /* Already in body but can be explicit */
+    font-weight: bold;
+    font-size: 2.2rem;
+    margin-bottom: 0.5rem;
+}
+p.tagline {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 1.1rem;
+    margin-top: 0;
+    margin-bottom: 1.2rem;
+}
+
+.top-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+    padding: 16px 18px 10px 18px;
+    margin-bottom: 18px;
+}
+
+#song-name { /* Moved from inline style */
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: bold;
+    margin-bottom: 8px;
+    background: none; /* Was var(--header-bg) in HTML, then overridden by inline */
+    padding: 0; /* Was 10px in HTML, then overridden */
+    font-size: 1.1rem;
+}
+
+.status-line { /* For Mode display */
+    margin-bottom: 0;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 1rem;
+}
+
+.controls {
+    margin-bottom: 1rem;
+}
+
+.controls label {
+    margin-right: .5rem;
+}
+
+.controls select {
+    margin-right: 1.5rem;
+}
+
+.status p {
+    margin: 0.5rem 0;
+}
+
+code {
+    background: #eee;
+    padding: 0 4px;
+    border-radius: 3px;
+}
+
+.port-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.port-label select {
+    flex: 1;
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: white;
+}
+
+.port-status {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+}
+
+.port-status.connected {
+    background-color: #4CAF50;
+}
+
+.port-status.disconnected {
+    background-color: #f44336;
+}
+
+select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.midi-activity {
+    width: 8px;
+    height: 8px;
+    background: #666;
+    border-radius: 50%;
+    opacity: 0;
+    transition: background-color 0.1s;
+    margin-left: 8px;
+}
+
+.midi-activity.active {
+    background: #4CAF50;
+    opacity: 1;
+    box-shadow: 0 0 4px rgba(76,175,80,0.8);
+}
+
+.piano-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+}
+
+.piano-section h3 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+
+.piano-container {
+    padding: 20px;
+    background: #f0f0f0;
+    border-radius: var(--radius);
+    margin: 20px 0;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.piano-key {
+    transition: all 0.1s ease;
+}
+
+.piano-key.white {
+    fill: white;
+    stroke: var(--border);
+    stroke-width: 1;
+}
+
+.piano-key.black {
+    fill: #333;
+    stroke: #000;
+    stroke-width: 1;
+}
+
+.piano-key.active {
+    fill: #4CAF50;
+    filter: drop-shadow(0 0 4px rgba(76,175,80,0.8));
+}
+
+.piano-key:hover {
+    filter: brightness(0.95);
+    cursor: pointer;
+}
+
+.key-text {
+    font-size: 8px;
+    font-family: monospace;
+    user-select: none;
+    pointer-events: none;
+}
+
+#notification-area {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+
+.notification {
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 12px 24px;
+    margin: 8px;
+    border-radius: 4px;
+    opacity: 1;
+    transition: opacity 0.5s;
+}
+
+.notification.success { border-left: 4px solid #4CAF50; }
+.notification.info { border-left: 4px solid #2196F3; }
+.notification.warning { border-left: 4px solid #FFC107; }
+.notification.error { border-left: 4px solid #f44336; }
+
+.song-controls {
+    margin: 20px 0;
+    padding: 15px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+}
+
+.song-controls textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: inherit;
+    resize: vertical;
+}
+
+.current-chord-info {
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--header-bg);
+    border-radius: var(--radius);
+    font-size: 1.1em;
+}
+
+.sequence-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+}
+
+.sequence-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.sequence-step {
+    padding: 8px 12px;
+    background: var(--header-bg);
+    border-radius: var(--radius);
+    font-family: monospace;
+}
+
+.sequence-step.active {
+    background: var(--highlight);
+    font-weight: bold;
+}
+
+.sequence-status {
+    margin-top: 10px;
+    font-size: 0.9em;
+    color: #666;
+}
+
+/* Styles moved from JS */
+.port-controls { /* Generic class for styling MIDI port control containers */
+    margin-top: 10px;
+    padding: 10px;
+    background: #f5f5f5;
+    border-radius: 4px;
+}
+.main-midi-controls { /* Specific for main input/output selectors */
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.save-indicator {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(76, 175, 80, 0.1);
+    color: #4CAF50;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 1001;
+}
+
+.inversion-display-container { /* Style for the inversion display added in JS */
+    margin-top: 10px;
+    padding: 5px;
+    background: var(--header-bg);
+    border-radius: var(--radius);            
+    font-size: 1.1em;
+}
+.tilt-display {
+    margin-top: 5px;
+    font-size: 0.9em;
+}
+
+</style>
+</head>
+<body>
+<div id="main">
+    <h1 class="page-title">reChord37.com reChord 0.5.0.1 Working on Sequencer</h1>
+    <p class="tagline">Working In Harmony & Actual Intelligence</p>
+    <div class="top-card">
+        <div id="song-name"></div> <!-- Content set by JS -->
+        <div class="status-line">
+            Mode: <strong><span id="mode-display"></span></strong> <!-- Changed ID for clarity -->
+        </div>
+    </div>
+</div>
+
+<div class="sequence-section">
+    <h3>Sequence</h3>
+    <div id="sequence-display" class="sequence-steps"></div>
+    <div class="sequence-status">
+        <span id="sequence-mode-indicator"></span>
+        <span id="current-step-indicator"></span>
+    </div>
+</div>
+
+<div id="notification-area"></div>
+
+<script>
+// chord-name-detector.js
+// This script block provides the `detectChord` function globally.
+"use strict";
+
+const NOTE_TO_SEMITONE = {
+    'C': 0,  'C#': 1, 'Db': 1,
+    'D': 2,  'D#': 3, 'Eb': 3,
+    'E': 4,  'Fb': 4, 'E#': 5,
+    'F': 5,  'F#': 6, 'Gb': 6,
+    'G': 7,  'G#': 8, 'Ab': 8,
+    'A': 9,  'A#': 10, 'Bb': 10,
+    'B': 11, 'Cb': 11, 'B#': 0
+};
+
+const CHORD_PATTERNS = {
+    'Major':            [0, 4, 7],
+    'Minor':            [0, 3, 7],
+    'Diminished':       [0, 3, 6],
+    'Augmented':        [0, 4, 8],
+    'Sus2':             [0, 2, 7],
+    'Sus4':             [0, 5, 7],
+    'Major 7th':        [0, 4, 7, 11],
+    'Minor 7th':        [0, 3, 7, 10],
+    'Dominant 7th':     [0, 4, 7, 10],
+    'Half-Diminished':  [0, 3, 6, 10],
+    'Diminished 7th':   [0, 3, 6, 9],
+    'Minor-Major 7th':  [0, 3, 7, 11],
+    'Aug-Major 7th':    [0, 4, 8, 11]
+};
+
+const OCTAVE_SEMITONES = 12; // Also defined in main script, ensure consistency or pass as arg.
+
+function normalizeNotes(notes) {
+    const getPitchClass = note => note.replace(/[0-9]/g, '').toUpperCase();
+    const semitones = notes.map(n => NOTE_TO_SEMITONE[getPitchClass(n)]);
+    return [...new Set(semitones)];
+}
+
+function getIntervals(root, semitones) {
+    return semitones.map(p => (p - root + OCTAVE_SEMITONES) % OCTAVE_SEMITONES).sort((a, b) => a - b);
+}
+
+function matchChord(intervals) {
+    for (const [name, pattern] of Object.entries(CHORD_PATTERNS)) {
+    if (pattern.length !== intervals.length) continue;
+    if (pattern.every((val, i) => val === intervals[i])) return name;
+    }
+    return null;
+}
+
+function detectChord(notes) {
+    if (!notes || notes.length === 0) return null; // Added guard for empty/null notes
+    const uniqueSemitones = normalizeNotes(notes);
+    if (uniqueSemitones.length < 2) return null;
+
+    for (let root of uniqueSemitones) {
+    const intervals = getIntervals(root, uniqueSemitones);
+    const chordName = matchChord(intervals);
+    if (chordName) {
+        const rootNote = Object.keys(NOTE_TO_SEMITONE)
+        .find(k => NOTE_TO_SEMITONE[k] === root && !k.includes('b') && k.length <= 2); // Prefer non-flat, simple names
+        return `${rootNote} ${chordName}`;
+    }
+    }
+    return 'Unknown Chord';
+}
+
+// Ensure it's available on the window object if used in a modular way later
+if (typeof window !== 'undefined') {
+    window.detectChord = detectChord;
+} else if (typeof module !== 'undefined' && module.exports) { // For Node.js/CommonJS (testing)
+    module.exports = { detectChord, NOTE_TO_SEMITONE, CHORD_PATTERNS, OCTAVE_SEMITONES };
+}
+</script>
+
+<script>
+"use strict";
+
+// === Constants ===
+// (OCTAVE_SEMITONES is also defined in chord-name-detector.js. Ensure consistency if separated.)
+// const OCTAVE_SEMITONES = 12; // Already available from chord-name-detector.js if loaded first, or define here.
+
+// === Mode Constants ===
+const MODE_STOP = 0;
+const MODE_RECORD = 1;
+const MODE_PLAY = 2;
+
+// === MIDI Constants ===
+const MIDI_CHANNEL_MAIN = 1;
+const MIDI_CHANNEL_DRUMS = 10;
+
+const MIDI_NOTE_ON = 0x90;
+const MIDI_NOTE_OFF = 0x80;
+const MIDI_CONTROL_CHANGE = 0xB0;
+const MIDI_PITCH_BEND = 0xE0;
+const MIDI_MODULATION_WHEEL = 1;
+
+const VELOCITY_THRESHOLD = 64;
+const MIN_VELOCITY = 1;
+const MAX_VELOCITY = 127;
+const VELOCITY_NOTE_OFF = 0;
+const DEFAULT_TRIGGER_VELOCITY = 100;
+
+// === Timing Constants ===
+const SIMULTANEOUS_PRESS_WINDOW = 150;  // ms
+const RECORD_HOLD_THRESHOLD = 500;      // ms
+const PORT_CHANGE_DELAY = 1000;         // ms for debouncing MIDI port state changes
+const SAVE_DELAY = 500;                 // ms for debouncing save operations
+const ACTIVITY_FLASH_DURATION = 100;    // ms for MIDI activity indicator
+const NOTIFICATION_FADEOUT_DURATION = 500; // ms for notification removal
+const DEFAULT_NOTIFICATION_DURATION = 3000; // ms for notification display
+const SAVE_INDICATOR_DURATION = 1500;   // ms for save indicator display
+
+// === Sequence Constants ===
+const MAX_SEQUENCE_LENGTH = 16;
+const MAX_CHORD_NOTES = 10;
+
+// === MIDI CC Numbers for Controls ===
+const CC_RECORD = 119;
+const CC_PLAY = 118;
+const CC_STOP = 117;
+const CC_SEQUENCE_PREV = 115;
+const CC_SEQUENCE_NEXT = 116;
+const CC_SEQUENCE_ADVANCE_DATA2 = 127; // Used with CC_SEQUENCE_NEXT to record a sequence step
+
+const CC_INVERSION = 74;
+const CC_VELOCITY_TILT = 75;
+// Note: CC 48 is for toggle, but there's also a NOTE_CHORD_TRIGGER_TOGGLE = 48.
+// ButtonManager uses CC_CHORD_TRIGGER_TOGGLE. handleMIDIMessage_PlayMode handles NOTE_CHORD_TRIGGER_TOGGLE.
+const CC_CHORD_TRIGGER_TOGGLE = 48;
+
+// === MIDI Note Numbers for Controls & Triggers ===
+const NOTE_FULL_CHORD_TRIGGER = 58;
+const NOTE_FULL_STRING_TRIGGER = 73;
+
+const NOTE_CHORD_OCTAVE_UP = 59;
+const NOTE_CHORD_OCTAVE_DOWN = 57;
+const NOTE_STRING_OCTAVE_UP = 74;
+const NOTE_STRING_OCTAVE_DOWN = 72;
+
+const BASS_TRIGGER_NOTES = [75, 78, 80, 82]; // Note: 75 is also CC_VELOCITY_TILT
+const STRING_TRIGGER_NOTES = [76, 77, 79, 81, 83, 84];
+
+const MIDI_NOTE_C3 = 60;
+const MIDI_NOTE_B3 = 71;
+
+const NOTE_CHORD_TRIGGER_TOGGLE = 48; // Note to toggle pad trigger mode (same value as CC_CHORD_TRIGGER_TOGGLE)
+
+// === Piano Keyboard UI Constants ===
+const PIANO_START_NOTE = 21; // A0
+const PIANO_END_NOTE = 108;  // C8
+const WHITE_KEY_WIDTH = 24;
+const WHITE_KEY_HEIGHT = 120;
+const BLACK_KEY_WIDTH = 16;
+const BLACK_KEY_HEIGHT = 80;
+const KEY_TEXT_Y_OFFSET = 5;
+const SVG_KEY_STROKE_WIDTH = 1;
+const SVG_KEY_TEXT_FONT_SIZE = "8px";
+
+// === Database Constants ===
+const DB_NAME = 'ChordDB';
+const DB_VERSION = 2;
+const STORE_NAME_SONGS = 'songs';
+const STORE_NAME_PORTS = 'ports';
+
+// === Inversion & Tilt Constants ===
+const INVERSION_CC_THRESHOLD = 20;
+const TILT_CC_THRESHOLD = 10;
+const TILT_AMOUNT_MIN = -1.0;
+const TILT_AMOUNT_MAX = 1.0;
+const TILT_AMOUNT_STEP = 0.01;
+const TILT_PIVOT_SHIFT_FACTOR = 0.5;
+const TILT_VELOCITY_MULTIPLIER = 60;
+const TILT_CC_VAL_MIN = 1;
+const TILT_CC_VAL_MAX = 127;
+const TILT_CC_VAL_CENTER = 64;
+
+// === Default MIDI Port Names ===
+const DEFAULT_INPUT_NAME = "MPK mini Plus Port 1";
+const DEFAULT_OUTPUT_NAMES = {
+    main: "IAC Driver miDiai00",
+    chord: "IAC Driver miDiai01",
+    bass: "IAC Driver miDiai02",
+    string: "IAC Driver miDiai03"
+};
+
+// === Pad Map ===
+// Pad map: MIDI note from controller -> Internal Pad Number (e.g., drum note like 36, 37)
+const PAD_MAP_1 = { 50: 36, 52: 37, 53: 38, 55: 39, 49: 40, 51: 41, 54: 42, 56: 43 };
+
+// === Application State ===
+const Chords = { // Grouped chord-related data
+    record: [],        // Notes currently being recorded live
+    string: [],        // Current "master" chord, loaded from pad or sequence
+    pads: {},          // Stored chords: { padNumber: { chord: [notes], bass: [notes] } }
+    triggers: {},      // Active MIDI notes for triggered outputs: { triggerMIDINote: [played_notes] }
+    sequence: [],      // Array of (pad numbers | array of notes)
+    sequenceIndex: 0,
+    // sequenceReady: false // (Currently not used, consider if needed)
+};
+
+// Other state variables
+let mode = MODE_STOP;
+let isRecordingSequence = false;
+let isSequenceMode = false;
+let pendingSequenceChord = null;
+let isWaitingForSequenceStepConfirmation = false;
+let isPadTriggerMode = false;
+let isMainOutputMuted = false; // Mutes main output when in PLAY mode
+
+let currentInversion = 0;
+let inversionCounter = 0;
+
+let tiltAmount = 0.0;
+let tiltPivot = 0.0;
+let tiltCounter = 0;
+
+let transposeOffset = 0;
+let fullChordOctaveOffset = 0;
+let stringOctaveOffset = 0;
+
+// MIDI engine state
+let midiAccess;
+let currentInput = null;
+let currentOutputs = { main: null, bass: null, chord: null, string: null };
+const lastPortStates = new Map(); // Tracks MIDI port connection states
+let portChangeTimeout = null;
+
+// IndexedDB
+let db;
+
+// UI interaction state
+const keyPressTimes = new Map(); // For detecting simultaneous key presses
+let selectedStoragePad = null;
+let isArmingSave = false;
+let saveTimeout = null; // For debouncing save operations
+
+// Tracking notes for 'chord' output specifically for accurate note-offs
+let currentPlayingChordNotes = [];
+
+// === DOM Element Cache ===
+const domElements = {
+    // Main page structure
+    notificationArea: null,
+    songNameDisplay: null,
+    modeDisplay: null,
+    // Sequence section
+    sequenceDisplay: null,
+    sequenceModeIndicator: null,
+    currentStepIndicator: null,
+    // Piano sections (containers)
+    mainPianoSection: null,
+    chordPianoSection: null,
+    currentPianoContainer: null, // Specific piano SVG container for current chord
+    // MIDI Port Selectors
+    inputsSelect: null,
+    mainOutputsSelect: null,
+    bassOutputsSelect: null,
+    chordOutputsSelect: null,
+    stringOutputsSelect: null,
+    // Song Controls
+    songNotesTextarea: null,
+    // Other dynamic elements might be added here if needed
+};
+
+// --- ButtonManager Class (from original script, good abstraction) ---
+class ButtonManager {
+    constructor() {
+        this.buttons = new Map(); 
+        this.pressTimes = new Map(); 
+        this.holdIntervals = new Map();
+        this.simultaneousGroups = new Map();
+    }
+    registerButton(cc, config) {
+        this.buttons.set(cc, {
+            onPress: config.onPress || (() => {}), 
+            onRelease: config.onRelease || (() => {}),
+            onHold: config.onHold || (() => {}), 
+            holdThreshold: config.holdThreshold || RECORD_HOLD_THRESHOLD,
+            simultaneousGroup: config.simultaneousGroup || null
+        });
+    }
+    registerSimultaneousGroup(groupId, buttons, handler) {
+        this.simultaneousGroups.set(groupId, { buttons: new Set(buttons), handler: handler });
+    }
+    handleMessage(status, data1, data2) {
+        const type = status & 0xF0; 
+        const channel = (status & 0x0F) + 1;
+        const pitchOrCC = data1; // CC number for CC messages
+        const value = data2;
+
+        if (type !== MIDI_CONTROL_CHANGE || channel !== MIDI_CHANNEL_MAIN) return; 
+        
+        const button = this.buttons.get(pitchOrCC); 
+        if (!button) return;
+
+        if (value >= VELOCITY_THRESHOLD) this.handlePress(pitchOrCC, button);
+        else this.handleRelease(pitchOrCC, button);
+    }
+    handlePress(cc, button) {
+        const now = Date.now(); 
+        this.pressTimes.set(cc, now);
+
+        if (button.simultaneousGroup) this.checkSimultaneousPress(button.simultaneousGroup);
+        
+        if (button.onHold) {
+            if (this.holdIntervals.has(cc)) clearInterval(this.holdIntervals.get(cc));
+            const interval = setInterval(() => {
+                const pressDuration = Date.now() - (this.pressTimes.get(cc) || now);
+                if (pressDuration >= button.holdThreshold) {
+                    button.onHold(); 
+                    clearInterval(interval); 
+                    this.holdIntervals.delete(cc);
+                }
+            }, 100); // Check interval
+            this.holdIntervals.set(cc, interval);
+        }
+        button.onPress();
+    }
+    handleRelease(cc, button) {
+        if (this.holdIntervals.has(cc)) {
+            clearInterval(this.holdIntervals.get(cc)); 
+            this.holdIntervals.delete(cc);
+        }
+        const pressTime = this.pressTimes.get(cc);
+        const pressDuration = pressTime ? Date.now() - pressTime : 0;
+        this.pressTimes.delete(cc);
+        button.onRelease(pressDuration);
+    }
+    checkSimultaneousPress(groupId) {
+        const group = this.simultaneousGroups.get(groupId); if (!group) return;
+        const now = Date.now();
+        const pressedButtons = Array.from(group.buttons)
+            .filter(cc => this.pressTimes.has(cc) && (now - this.pressTimes.get(cc) < SIMULTANEOUS_PRESS_WINDOW));
+        if (pressedButtons.length === group.buttons.size) group.handler();
+    }
+}
+
+// === Button Manager Instance ===
+const buttonManager = new ButtonManager();
+
+// === Core Functions ===
+
+// --- Chord Manipulation ---
+function invertChord(notes, inversion) {
+    if (!notes || notes.length === 0) return notes;
+    
+    const numNotes = notes.length;
+    const maxInversion = Math.max(0, numNotes - 1);
+    inversion = ((inversion % (maxInversion + 1)) + (maxInversion + 1)) % (maxInversion + 1);
+    
+    const result = [...notes];
+    for (let i = 0; i < inversion; i++) {
+        if (result.length > 0) {
+            const firstNote = result.shift();
+            result.push(firstNote + OCTAVE_SEMITONES); 
+        }
+    }
+    return result;
+}
+
+function applyVelocityTilt(chordNotes, ccVelocityTiltValue) {
+    if (!chordNotes || chordNotes.length === 0) return chordNotes;
+    
+    if (ccVelocityTiltValue !== 0) {
+        if (ccVelocityTiltValue === TILT_CC_VAL_MAX) tiltCounter++;
+        else if (ccVelocityTiltValue === TILT_CC_VAL_MIN) tiltCounter--;
+        else { tiltCounter = 0; }
+
+        if (Math.abs(tiltCounter) >= TILT_CC_THRESHOLD) {
+            if (tiltCounter > 0) tiltAmount = Math.max(TILT_AMOUNT_MIN, tiltAmount - TILT_AMOUNT_STEP);
+            else tiltAmount = Math.min(TILT_AMOUNT_MAX, tiltAmount + TILT_AMOUNT_STEP);
+            tiltCounter = 0;
+        }
+        if (ccVelocityTiltValue === TILT_CC_VAL_CENTER) {
+            tiltAmount = 0.0;
+            tiltCounter = 0;
+        }
+    }
+    
+    const sortedNotes = [...chordNotes].sort((a, b) => a.pitch - b.pitch);
+    const pivotShift = tiltAmount * TILT_PIVOT_SHIFT_FACTOR;
+    const centerPivot = (sortedNotes.length - 1) / 2.0;
+    const currentPivot = Math.max(0, Math.min(sortedNotes.length - 1, centerPivot + pivotShift));
+    
+    tiltPivot = currentPivot;
+    updateTiltDisplay();
+    
+    return sortedNotes.map((note, index) => {
+        const velocityDelta = (index - currentPivot) * tiltAmount * TILT_VELOCITY_MULTIPLIER;
+        const newVelocity = Math.max(MIN_VELOCITY, Math.min(MAX_VELOCITY, note.velocity + velocityDelta));
+        return { ...note, velocity: Math.round(newVelocity) };
+    });
+}
+
+// --- UI Update Functions ---
+function showNotification(message, type = 'info', duration = DEFAULT_NOTIFICATION_DURATION) {
+    if (!domElements.notificationArea) return;
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    domElements.notificationArea.appendChild(notification);
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), NOTIFICATION_FADEOUT_DURATION);
+    }, duration);
+}
+
+function flashActivity(type) { // e.g., 'input', 'main-output', 'chord-output'
+    const el = document.getElementById(`${type}-activity`); // These are dynamically created with piano sections
+    if (!el) return;
+    el.classList.add('active');
+    setTimeout(() => el.classList.remove('active'), ACTIVITY_FLASH_DURATION);
+}
+
+function updateModeDisplay() {
+    if (domElements.modeDisplay) {
+        domElements.modeDisplay.textContent = mode === MODE_STOP ? "STOP" : mode === MODE_RECORD ? "RECORD" : "PLAY";
+    }
+}
+
+function updateChordDisplay() {
+    const currentChordForDisplay = (mode === MODE_RECORD) ? Chords.record : Chords.string;
+    const chordNotesText = currentChordForDisplay.length > 0 
+        ? currentChordForDisplay.map(note => getNoteNameFromMIDI(note)).join(' ')
+        : 'No Chord';
+    
+    const currentChordEl = document.getElementById('currentChord'); // Inside .current-chord-info
+    if (currentChordEl) currentChordEl.textContent = chordNotesText;
+    
+    const chordNameEl = document.getElementById('chordName'); // Inside .current-chord-info
+    if (chordNameEl) {
+        if (currentChordForDisplay.length > 0 && typeof detectChord === 'function') {
+            const chordName = detectChord(currentChordForDisplay.map(note => getNoteNameFromMIDI(note)));
+            chordNameEl.textContent = chordName || 'Unknown Chord';
+        } else {
+            chordNameEl.textContent = '-';
+        }
+    }
+}
+
+function updateCurrentPianoView() {
+    const currentChordForDisplay = (mode === MODE_RECORD) ? Chords.record : Chords.string;
+    if (domElements.currentPianoContainer) {
+        const pianoKeys = domElements.currentPianoContainer.querySelectorAll('.piano-key');
+        pianoKeys.forEach(key => key.classList.remove('active'));
+        currentChordForDisplay.forEach(note => {
+            const key = domElements.currentPianoContainer.querySelector(`.piano-key[data-note="${note}"]`);
+            if (key) key.classList.add('active');
+        });
+    }
+}
+
+function updateInversionDisplay() {
+    if (!domElements.chordPianoSection) return;
+    let inversionDisplay = domElements.chordPianoSection.querySelector('.inversion-display-container');
+    if (!inversionDisplay) {
+        inversionDisplay = document.createElement('div');
+        inversionDisplay.className = 'inversion-display-container'; // Use class for styling
+        domElements.chordPianoSection.appendChild(inversionDisplay);
+    }
+    
+    const maxInv = getMaxInversion();
+    const inversionText = currentInversion === 0 ? 'Root Position' : 
+                         `${currentInversion}${currentInversion === 1 ? 'st' : currentInversion === 2 ? 'nd' : currentInversion === 3 ? 'rd' : 'th'} Inversion`;
+    const maxText = maxInv > 0 ? ` (max: ${maxInv})` : '';
+    
+    inversionDisplay.innerHTML = `
+        <div>Chord Position: ${inversionText}${maxText}</div>
+        <div class="tilt-display">
+            Velocity Tilt: <span id="tilt-amount">${tiltAmount.toFixed(2)}</span>
+            <br>
+            Pivot: <span id="tilt-pivot">${tiltPivot.toFixed(2)}</span>
+        </div>
+    `;
+}
+
+function updateTiltDisplay() {
+    const tiltAmountEl = document.getElementById('tilt-amount'); // Inside inversion display
+    const tiltPivotEl = document.getElementById('tilt-pivot');   // Inside inversion display
+    if (tiltAmountEl) tiltAmountEl.textContent = tiltAmount.toFixed(2);
+    if (tiltPivotEl) tiltPivotEl.textContent = tiltPivot.toFixed(2);
+}
+
+function updateMIDIStatusIndicators() { // Renamed from updateMIDIStatus for clarity
+    const inputStatus = currentInput ? 'connected' : 'disconnected';
+    
+    if (domElements.mainPianoSection) {
+        const inputStatusEl = domElements.mainPianoSection.querySelector('.port-status');
+        if (inputStatusEl) inputStatusEl.className = `port-status ${inputStatus}`;
+
+        const outputStatusEl = domElements.mainPianoSection.querySelectorAll('.port-status')[1];
+        if (outputStatusEl) outputStatusEl.className = `port-status ${currentOutputs.main ? 'connected' : 'disconnected'}`;
+    }
+    
+    ['bass', 'chord', 'string'].forEach(type => {
+        const section = document.querySelector(`#${type}-piano`)?.parentElement; // Get parent section
+        if (section) {
+            const statusEl = section.querySelector('.port-status');
+            if (statusEl) statusEl.className = `port-status ${currentOutputs[type] ? 'connected' : 'disconnected'}`;
+        }
+    });
+}
+
+// --- MIDI Handling ---
+function getNoteNameFromMIDI(midiNote) {
+    const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const octave = Math.floor(midiNote / OCTAVE_SEMITONES) - 1;
+    const noteName = notes[midiNote % OCTAVE_SEMITONES];
+    return `${noteName}${octave}`;
+}
+
+function send(data, outputType = 'main') {
+    const output = currentOutputs[outputType];
+    if (!output) return;
+    if (outputType === 'main' && mode === MODE_PLAY && isMainOutputMuted) return; 
+    
+    try {
+        const statusByte = data[0] & 0xF0;
+        if (statusByte === MIDI_NOTE_OFF) data[2] = VELOCITY_NOTE_OFF;
+        // Note ON with velocity 0 is also a Note OFF, data[2] would already be 0.
+
+        output.send(data);
+        flashActivity(`${outputType}-output`);
+        
+        const [status, pitch, velocity] = data;
+        const type = status & 0xF0;
+        if (type === MIDI_NOTE_ON || type === MIDI_NOTE_OFF) {
+            updateKeyboard(pitch, type === MIDI_NOTE_ON && velocity > 0, outputType);
+        }
+    } catch (error) {
+        showNotification(`MIDI ${outputType} out err: ${error.message.substring(0,30)}`, 'warning');
+        console.error(`Error sending MIDI to ${outputType}:`, error, data);
+    }
+}
+
+function sendChord(notes, vel, ch, outputType = 'chord') {
+    const notesArray = Array.isArray(notes) ? notes : [notes];
+    if (notesArray.length === 0) return;
+
+    if (outputType === 'chord') {
+        clearAllChordNotes(); // Clear previous chord notes from 'chord' output
+
+        const notesWithVelocity = notesArray.map(noteOrObj => 
+            (typeof noteOrObj === 'object' && 'pitch' in noteOrObj) ? noteOrObj : { pitch: noteOrObj, velocity: vel }
+        );
+        
+        let processedNotes = notesWithVelocity;
+        if (currentInversion > 0) {
+            const invertedPitches = invertChord(notesWithVelocity.map(n => n.pitch), currentInversion);
+            processedNotes = invertedPitches.map((p, index) => ({ 
+                pitch: p, 
+                velocity: notesWithVelocity[index]?.velocity || vel 
+            }));
+        }
+        
+        const tiltedNotes = applyVelocityTilt(processedNotes, 0);
+
+        tiltedNotes.forEach(note => {
+            send([MIDI_NOTE_ON | ((ch - 1) & 0x0F), note.pitch, note.velocity], outputType);
+        });
+        currentPlayingChordNotes = tiltedNotes.map(n => n.pitch);
+    } else { // For 'string', 'bass' outputs
+        notesArray.forEach(noteOrObj => {
+            const pitch = (typeof noteOrObj === 'object' && 'pitch' in noteOrObj) ? noteOrObj.pitch : noteOrObj;
+            const velocity = (typeof noteOrObj === 'object' && 'velocity' in noteOrObj) ? noteOrObj.velocity : vel;
+            send([MIDI_NOTE_ON | ((ch - 1) & 0x0F), pitch, velocity], outputType);
+        });
+    }
+}
+
+function sendNoteOffs(notes, ch, outputType = 'chord') {
+    const notesArray = Array.isArray(notes) ? notes : [notes];
+    if (!notesArray.length) return;
+
+    if (outputType === 'chord') {
+        currentPlayingChordNotes.forEach(notePitch => {
+            send([MIDI_NOTE_OFF | ((ch - 1) & 0x0F), notePitch, VELOCITY_NOTE_OFF], outputType);
+        });
+        currentPlayingChordNotes = [];
+    } else {
+        notesArray.forEach(noteOrObj => {
+            const pitch = (typeof noteOrObj === 'object' && 'pitch' in noteOrObj) ? noteOrObj.pitch : noteOrObj;
+            send([MIDI_NOTE_OFF | ((ch - 1) & 0x0F), pitch, VELOCITY_NOTE_OFF], outputType);
+        });
+    }
+}
+
+function clearAllChordNotes() { // Specifically for 'chord' output
+    if (currentOutputs.chord && currentPlayingChordNotes.length > 0) {
+        currentPlayingChordNotes.forEach(notePitch => {
+            send([MIDI_NOTE_OFF | ((MIDI_CHANNEL_MAIN - 1) & 0x0F), notePitch, VELOCITY_NOTE_OFF], 'chord');
+        });
+        currentPlayingChordNotes = [];
+    }
+}
+
+function getMaxInversion() {
+    const currentChordBase = (mode === MODE_PLAY && Chords.string.length > 0) ? Chords.string : Chords.record;
+    return Math.max(0, currentChordBase.length - 1);
+}
+
+
+// --- MIDI Message Handling (Decomposed) ---
+function handleMIDIMessage(ev) {
+    try {
+        if (!ev.data || ev.data.length < 2) { 
+            showNotification('Invalid MIDI message received', 'warning'); 
+            return; 
+        }
+        // logMIDIMessage(ev); // Uncomment for debugging
+
+        const [status, data1, data2] = ev.data;
+
+        // ButtonManager handles CC-based buttons (Record, Play, Stop, etc.)
+        buttonManager.handleMessage(status, data1, data2);
+
+        if (mode === MODE_STOP) {
+            handleMIDIMessage_StopMode(ev.data, status, data1, data2);
+            return;
+        }
+        
+        const type = status & 0xF0; 
+        const channel = (status & 0x0F) + 1;
+
+        // Global controls (Inversion, Tilt, Pitch Bend, Mod Wheel) - active in Record/Play
+        if (handleGlobalMidiControls(type, channel, data1, data2, ev.data)) {
+            return; // Message was handled globally
+        }
+        
+        // Drum channel passthrough (if not in PLAY mode, where it might be pads)
+        if (channel === MIDI_CHANNEL_DRUMS && mode !== MODE_PLAY) {
+            send(ev.data, 'main'); 
+            if (type === MIDI_NOTE_ON || type === MIDI_NOTE_OFF) {
+                flashActivity('input'); 
+                updateKeyboard(data1, type === MIDI_NOTE_ON && data2 > 0);
+            }
+            return;
+        }
+
+        // Sequence recording: Pad input (mapped keys on CH_MAIN) used to add existing pads to sequence
+        // This must come before mode-specific general note handling.
+        if (isRecordingSequence && type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && data2 > 0 && PAD_MAP_1[data1]) {
+            flashActivity('input'); 
+            updateKeyboard(data1, true);
+            const padNumber = PAD_MAP_1[data1];
+            const padData = Chords.pads[padNumber];
+
+            if (padData && padData.chord && padData.chord.length > 0) {
+                if (Chords.sequence.length < MAX_SEQUENCE_LENGTH) {
+                    Chords.sequence.push(padNumber); // Add pad number to sequence
+                    showNotification(`Seq Add Pad: ${padNumber} (${Chords.sequence.length}/${MAX_SEQUENCE_LENGTH})`, 'info');
+                    updateStatus();
+                } else {
+                    showNotification(`Max sequence length (${MAX_SEQUENCE_LENGTH}) reached.`, 'warning');
+                }
+            } else {
+                showNotification(`Pad ${padNumber} is empty, cannot add to sequence.`, 'warning');
+            }
+            return; // Consume this pad press for sequence
+        }
+
+        // Mode-specific handling
+        if (mode === MODE_RECORD) {
+            handleMIDIMessage_RecordMode(ev.data, type, channel, data1, data2);
+        } else if (mode === MODE_PLAY) {
+            handleMIDIMessage_PlayMode(ev.data, type, channel, data1, data2);
+        }
+
+    } catch (error) {
+        showNotification('MIDI processing error: ' + error.message, 'error');
+        console.error("MIDI Processing Error: ", error, ev);
+    }
+}
+
+function handleGlobalMidiControls(type, channel, data1, data2, rawData) {
+    // Handles controls active in both RECORD and PLAY modes
+    if (type === MIDI_CONTROL_CHANGE && channel === MIDI_CHANNEL_MAIN) {
+        if (data1 === CC_INVERSION) {
+            const maxInv = getMaxInversion();
+            if (data2 === MAX_VELOCITY) inversionCounter++; 
+            else if (data2 === MIN_VELOCITY) inversionCounter--; 
+            else inversionCounter = 0;
+
+            if (Math.abs(inversionCounter) >= INVERSION_CC_THRESHOLD) {
+                currentInversion = (currentInversion + (inversionCounter > 0 ? 1 : -1) + maxInv + 1) % (maxInv + 1);
+                inversionCounter = 0; 
+                clearAllChordNotes(); 
+                updateInversionDisplay();
+                if (isPadTriggerMode && Chords.string.length > 0) {
+                    const chordNotes = Chords.string.map(n => ({ pitch: n + transposeOffset + (fullChordOctaveOffset * OCTAVE_SEMITONES), velocity: DEFAULT_TRIGGER_VELOCITY }));
+                    const tiltedNotes = applyVelocityTilt(chordNotes, 0); 
+                    Chords.triggers[NOTE_FULL_CHORD_TRIGGER] = tiltedNotes.map(n => n.pitch);
+                    sendChord(tiltedNotes.map(n => n.pitch), tiltedNotes[0]?.velocity || DEFAULT_TRIGGER_VELOCITY, MIDI_CHANNEL_MAIN, 'chord');
+                }
+            }
+            return true; // Handled
+        }
+        if (data1 === CC_VELOCITY_TILT) {
+            if (Chords.string.length > 0) {
+                const testChord = Chords.string.map(n => ({ pitch: n + transposeOffset + (fullChordOctaveOffset * OCTAVE_SEMITONES), velocity: DEFAULT_TRIGGER_VELOCITY }));
+                applyVelocityTilt(testChord, data2); // Pass CC value to update tiltAmount
+            }
+            return true; // Handled
+        }
+    }
+    
+    if (type === MIDI_PITCH_BEND || (type === MIDI_CONTROL_CHANGE && data1 === MIDI_MODULATION_WHEEL)) {
+        ['main', 'bass', 'chord', 'string'].forEach(portType => send(rawData, portType));
+        return true; // Handled
+    }
+    return false; // Not handled by this function
+}
+
+function handleMIDIMessage_StopMode(rawData, status, data1, data2) {
+    send(rawData, 'main'); // Passthrough all MIDI
+    if ((status & 0xF0) === MIDI_NOTE_ON || (status & 0xF0) === MIDI_NOTE_OFF) {
+         flashActivity('input'); 
+         updateKeyboard(data1, (status & 0xF0) === MIDI_NOTE_ON && data2 > 0);
+    }
+}
+
+function handleMIDIMessage_RecordMode(rawData, type, channel, pitch, value) {
+    // Note: `pitch` here is data1, `value` is data2
+    if (type === MIDI_NOTE_ON && channel === MIDI_CHANNEL_MAIN && value > 0) {
+        flashActivity('input'); 
+        updateKeyboard(pitch, true);
+        const potentialPadKey = PAD_MAP_1[pitch] || pitch; 
+
+        if (isArmingSave) {
+            selectedStoragePad = potentialPadKey;
+            showNotification(`Pad ${selectedStoragePad} selected for save. Release Record to confirm.`, 'info');
+        } else { // Not arming save, musical note input
+            send(rawData, 'main'); // Passthrough to main output
+            const noteIndex = Chords.record.indexOf(pitch);
+            if (noteIndex === -1) {
+                if (Chords.record.length < MAX_CHORD_NOTES) {
+                    Chords.record.push(pitch); Chords.record.sort((a, b) => a - b);
+                }
+            } else {
+                Chords.record.splice(noteIndex, 1);
+            }
+            showNotification(`${noteIndex === -1 ? 'Added' : 'Removed'} ${getNoteNameFromMIDI(pitch)} to current chord.`, 'info');
+
+            if (isRecordingSequence) { // Live note input for sequence step
+                pendingSequenceChord = [...Chords.record];
+                isWaitingForSequenceStepConfirmation = true;
+                let chordNotesText = pendingSequenceChord.length > 0 
+                    ? pendingSequenceChord.map(note => getNoteNameFromMIDI(note)).join(' ') : 'No Chord';
+                let chordName = pendingSequenceChord.length > 0 && typeof detectChord === 'function'
+                    ? (detectChord(pendingSequenceChord.map(note => getNoteNameFromMIDI(note))) || 'Unknown Chord') : '-';
+                const nextStepNumber = Chords.sequence.length + 1;
+                showNotification(`Step ${nextStepNumber} pending: ${chordName} (${chordNotesText}). Press Next Step (Data1+Data2) to record.`, 'info', 4000);
+            }
+            updateStatus();
+        }
+    } else if (type === MIDI_NOTE_OFF && channel === MIDI_CHANNEL_MAIN) {
+        flashActivity('input'); 
+        updateKeyboard(pitch, false);
+        if (!isArmingSave) {
+            send(rawData, 'main'); // Passthrough musical note-offs
+        }
+    } else if (channel === MIDI_CHANNEL_MAIN) { // Other CCs or messages on main channel
+        if (!isArmingSave) {
+             send(rawData, 'main'); // General passthrough
+        }
+    }
+    // Other channels/messages in RECORD mode are currently ignored unless handled by ButtonManager or global controls
+}
+
+function handleMIDIMessage_PlayMode(rawData, type, channel, pitch, value) {
+    // Note: `pitch` here is data1, `value` is data2
+    if (type === MIDI_NOTE_ON && value > 0) {
+        flashActivity('input'); 
+        updateKeyboard(pitch, true, 'main');
+
+        if (channel === MIDI_CHANNEL_MAIN) {
+            // Chord Trigger Toggle via NOTE (NOTE_CHORD_TRIGGER_TOGGLE is 48)
+            // CC_CHORD_TRIGGER_TOGGLE (also 48) is handled by ButtonManager
+            if (pitch === NOTE_CHORD_TRIGGER_TOGGLE) {
+                isPadTriggerMode = !isPadTriggerMode;
+                showNotification(`Chord trigger ${isPadTriggerMode ? 'ON' : 'OFF'}`, 'info');
+                if (isPadTriggerMode && Chords.string.length > 0) {
+                    const chordNotes = Chords.string.map(n => ({ 
+                        pitch: n + transposeOffset + (fullChordOctaveOffset * OCTAVE_SEMITONES), 
+                        velocity: DEFAULT_TRIGGER_VELOCITY 
+                    }));
+                    const tiltedNotes = applyVelocityTilt(chordNotes, 0);
+                    Chords.triggers[NOTE_FULL_CHORD_TRIGGER] = tiltedNotes.map(n => n.pitch);
+                    sendChord(tiltedNotes.map(n => n.pitch), tiltedNotes[0]?.velocity || DEFAULT_TRIGGER_VELOCITY, MIDI_CHANNEL_MAIN, 'chord');
+                }
+                return;
+            }
+
+            // Octave controls
+            if ([NOTE_CHORD_OCTAVE_UP, NOTE_CHORD_OCTAVE_DOWN, NOTE_STRING_OCTAVE_UP, NOTE_STRING_OCTAVE_DOWN].includes(pitch)) {
+                const now = Date.now(); keyPressTimes.set(pitch, now);
+                const chUpTime = keyPressTimes.get(NOTE_CHORD_OCTAVE_UP), chDownTime = keyPressTimes.get(NOTE_CHORD_OCTAVE_DOWN);
+                const strUpTime = keyPressTimes.get(NOTE_STRING_OCTAVE_UP), strDownTime = keyPressTimes.get(NOTE_STRING_OCTAVE_DOWN);
+
+                if (chUpTime && chDownTime && Math.abs(chUpTime - chDownTime) < SIMULTANEOUS_PRESS_WINDOW) {
+                    fullChordOctaveOffset = 0; showNotification('Chord octave reset', 'info');
+                    keyPressTimes.delete(NOTE_CHORD_OCTAVE_UP); keyPressTimes.delete(NOTE_CHORD_OCTAVE_DOWN); return;
+                }
+                if (strUpTime && strDownTime && Math.abs(strUpTime - strDownTime) < SIMULTANEOUS_PRESS_WINDOW) {
+                    stringOctaveOffset = 0; showNotification('String octave reset', 'info');
+                    keyPressTimes.delete(NOTE_STRING_OCTAVE_UP); keyPressTimes.delete(NOTE_STRING_OCTAVE_DOWN); return;
+                }
+                if (pitch === NOTE_CHORD_OCTAVE_UP) { fullChordOctaveOffset++; showNotification(`Chord Oct: ${fullChordOctaveOffset > 0 ? '+' : ''}${fullChordOctaveOffset}`, 'info'); return; }
+                if (pitch === NOTE_CHORD_OCTAVE_DOWN) { fullChordOctaveOffset--; showNotification(`Chord Oct: ${fullChordOctaveOffset > 0 ? '+' : ''}${fullChordOctaveOffset}`, 'info'); return; }
+                if (pitch === NOTE_STRING_OCTAVE_UP) { stringOctaveOffset++; showNotification(`String Oct: ${stringOctaveOffset > 0 ? '+' : ''}${stringOctaveOffset}`, 'info'); return; }
+                if (pitch === NOTE_STRING_OCTAVE_DOWN) { stringOctaveOffset--; showNotification(`String Oct: ${stringOctaveOffset > 0 ? '+' : ''}${stringOctaveOffset}`, 'info'); return; }
+            }
+            
+            // Transpose keys
+            if (pitch >= MIDI_NOTE_C3 && pitch <= MIDI_NOTE_B3) {
+                transposeOffset = pitch - MIDI_NOTE_C3; showNotification(`Transpose: ${transposeOffset}`, 'info');
+                if (isPadTriggerMode && Chords.string.length > 0 && !isSequenceMode) {
+                    const baseNotes = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * OCTAVE_SEMITONES));
+                    const notesToPlayObjects = baseNotes.map(p => ({ pitch: p, velocity: value }));
+                    Chords.triggers[pitch] = notesToPlayObjects.map(n => n.pitch); // Store raw pitches
+                    sendChord(notesToPlayObjects.map(n => n.pitch), value, MIDI_CHANNEL_MAIN, 'chord');
+                }
+                return;
+            }
+            
+            // String/Bass/Full Chord Triggers
+            let targetOutput = null, notesToPlay = [], triggerKey = pitch;
+            if (STRING_TRIGGER_NOTES.includes(pitch) && Chords.string.length) {
+                let idx = STRING_TRIGGER_NOTES.indexOf(pitch);
+                if (idx >= Chords.string.length) idx = Chords.string.length - 1;
+                notesToPlay = [Chords.string[idx] + transposeOffset + (stringOctaveOffset * OCTAVE_SEMITONES)];
+                targetOutput = 'string';
+            } else if (BASS_TRIGGER_NOTES.includes(pitch) && Chords.string.length) {
+                let idx = BASS_TRIGGER_NOTES.indexOf(pitch);
+                if (idx < Chords.string.length) {
+                     notesToPlay = [Chords.string[idx] + transposeOffset + (stringOctaveOffset * OCTAVE_SEMITONES) - OCTAVE_SEMITONES];
+                     targetOutput = 'bass';
+                }
+            } else if (pitch === NOTE_FULL_CHORD_TRIGGER && Chords.string.length) {
+                notesToPlay = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * OCTAVE_SEMITONES));
+                targetOutput = 'chord';
+            } else if (pitch === NOTE_FULL_STRING_TRIGGER && Chords.string.length) {
+                notesToPlay = Chords.string.map(n => n + transposeOffset + (stringOctaveOffset * OCTAVE_SEMITONES));
+                targetOutput = 'string';
+            }
+
+            if (targetOutput && notesToPlay.length > 0) {
+                Chords.triggers[triggerKey] = notesToPlay;
+                sendChord(notesToPlay, value, MIDI_CHANNEL_MAIN, targetOutput);
+                return;
+            }
+        } // End channel === MIDI_CHANNEL_MAIN (Note ON)
+
+        // Pad handling (Note ON) - CH_DRUMS or mapped CH_MAIN keys
+        if (channel === MIDI_CHANNEL_DRUMS || (channel === MIDI_CHANNEL_MAIN && PAD_MAP_1[pitch])) {
+            const padNumber = channel === MIDI_CHANNEL_DRUMS ? pitch : PAD_MAP_1[pitch];
+            const padData = Chords.pads[padNumber];
+            if (!padData || !padData.chord || padData.chord.length === 0) {
+                showNotification(`Pad ${padNumber} empty`, 'warning'); return;
+            }
+
+            Chords.string = [...(padData.bass || []), ...padData.chord];
+            // If isRecordingSequence is true here, it means user is trying to build sequence using existing pads.
+            // This case is handled by the `isRecordingSequence && PAD_MAP_1[data1]` block before mode-specific handlers.
+            // So, `pendingSequenceChord` update here is likely redundant or for a different flow.
+            // if (isRecordingSequence) { pendingSequenceChord = [...Chords.string]; } 
+            
+            if (isPadTriggerMode) {
+                const transposedChord = Chords.string.map(n => n + transposeOffset + (fullChordOctaveOffset * OCTAVE_SEMITONES));
+                const notesToPlayObjects = transposedChord.map(p => ({ pitch: p, velocity: value }));
+                Chords.triggers[padNumber] = notesToPlayObjects.map(n => n.pitch);
+                sendChord(notesToPlayObjects.map(n => n.pitch), value, MIDI_CHANNEL_MAIN, 'chord');
+            }
+            updateStatus(); 
+            showNotification(`Loaded pad ${padNumber}${isPadTriggerMode ? ' (triggered)' : ''}`, 'info');
+            return;
+        }
+        // Unhandled Note ON in PLAY mode is currently dropped. To passthrough: send(rawData, 'main');
+
+    } else if (type === MIDI_NOTE_OFF || (type === MIDI_NOTE_ON && value === 0)) { // Note OFF
+        flashActivity('input'); 
+        updateKeyboard(pitch, false, 'main');
+
+        if (channel === MIDI_CHANNEL_MAIN) {
+            // Transpose keys Note OFF
+            if (pitch >= MIDI_NOTE_C3 && pitch <= MIDI_NOTE_B3) {
+                if (isPadTriggerMode && Chords.triggers[pitch] && !isSequenceMode) {
+                    sendNoteOffs(Chords.triggers[pitch], MIDI_CHANNEL_MAIN, 'chord');
+                    delete Chords.triggers[pitch];
+                }
+            }
+
+            // String/Bass/Full Chord Triggers Note OFF
+            let targetOutput = null;
+            if (STRING_TRIGGER_NOTES.includes(pitch)) targetOutput = 'string';
+            else if (BASS_TRIGGER_NOTES.includes(pitch)) targetOutput = 'bass';
+            else if (pitch === NOTE_FULL_CHORD_TRIGGER) targetOutput = 'chord';
+            else if (pitch === NOTE_FULL_STRING_TRIGGER) targetOutput = 'string';
+
+            if (targetOutput && Chords.triggers[pitch]) {
+                sendNoteOffs(Chords.triggers[pitch], MIDI_CHANNEL_MAIN, targetOutput);
+                delete Chords.triggers[pitch];
+            }
+        } // End channel === MIDI_CHANNEL_MAIN (Note OFF)
+
+        // Pad handling (Note OFF)
+        if (channel === MIDI_CHANNEL_DRUMS || (channel === MIDI_CHANNEL_MAIN && PAD_MAP_1[pitch])) {
+            const padNumber = channel === MIDI_CHANNEL_DRUMS ? pitch : PAD_MAP_1[pitch];
+            if (isPadTriggerMode && Chords.triggers[padNumber]) {
+                sendNoteOffs(Chords.triggers[padNumber], MIDI_CHANNEL_MAIN, 'chord');
+                delete Chords.triggers[padNumber];
+            }
+        }
+        
+        send(rawData, 'main'); // Passthrough ALL Note OFF messages in PLAY mode to main output
+    }
+    // Other message types (e.g., unhandled CCs) in PLAY mode are dropped if not handled by ButtonManager or global controls.
+}
+
+
+// --- MIDI Port Management ---
+function selectInput(id) {
+    if (currentInput && currentInput.id === id && currentInput.state === 'connected') return;
+    if (currentInput) {
+        currentInput.onmidimessage = null;
+        // currentInput.close && currentInput.close(); // Optional: explicitly close
+    }
+    
+    currentInput = id ? midiAccess.inputs.get(id) : null;
+    if (currentInput) {
+        currentInput.onmidimessage = handleMIDIMessage;
+        trackPortState(currentInput);
+        if (domElements.mainPianoSection) {
+            const titleEl = domElements.mainPianoSection.querySelector('h3');
+            if (titleEl) titleEl.textContent = 'Controller: ' + currentInput.name;
+        }
+    } else {
+        if (domElements.mainPianoSection) {
+            const titleEl = domElements.mainPianoSection.querySelector('h3');
+            if (titleEl) titleEl.textContent = 'Controller: MIDI Input';
+        }
+    }
+    updateMIDIStatusIndicators();
+}
+
+function selectOutput(type, id) {
+    if (currentOutputs[type] && currentOutputs[type].id === id && currentOutputs[type].state === 'connected') return;
+    currentOutputs[type] = id ? midiAccess.outputs.get(id) : null;
+    if (currentOutputs[type]) trackPortState(currentOutputs[type]);
+    updateMIDIStatusIndicators();
+}
+
+function trackPortState(port) {
+    lastPortStates.set(port.id, port.state);
+}
+
+async function refreshPortLists() {
+    if (!domElements.inputsSelect || !domElements.mainOutputsSelect ) {
+        showNotification('Core MIDI selectors not found in DOM', 'warning'); return;
+    }
+
+    domElements.inputsSelect.innerHTML = '<option value="">Select MIDI Input</option>';
+    domElements.mainOutputsSelect.innerHTML = '<option value="">Select Main MIDI Output</option>';
+    ['bass', 'chord', 'string'].forEach(type => {
+        const selector = domElements[`${type}OutputsSelect`]; // e.g., domElements.bassOutputsSelect
+        if (selector) selector.innerHTML = `<option value="">Select ${type.charAt(0).toUpperCase() + type.slice(1)} Output</option>`;
+    });
+    
+    let hasInputs = false, hasOutputs = false;
+    if (!midiAccess) { showNotification('MIDI Access not available.', 'warning'); return; }
+
+    midiAccess.inputs.forEach(inp => {
+        hasInputs = true;
+        const opt = new Option(inp.name, inp.id);
+        if (currentInput && inp.id === currentInput.id) opt.selected = true;
+        domElements.inputsSelect.add(opt);
+    });
+
+    midiAccess.outputs.forEach(outp => {
+        hasOutputs = true;
+        const optBase = new Option(outp.name, outp.id);
+        domElements.mainOutputsSelect.add(optBase.cloneNode(true));
+        ['bass', 'chord', 'string'].forEach(type => {
+            const selector = domElements[`${type}OutputsSelect`];
+            if (selector) selector.add(optBase.cloneNode(true));
+        });
+    });
+
+    domElements.inputsSelect.disabled = !hasInputs;
+    domElements.mainOutputsSelect.disabled = !hasOutputs;
+    ['bass', 'chord', 'string'].forEach(type => {
+        const selector = domElements[`${type}OutputsSelect`];
+        if (selector) selector.disabled = !hasOutputs;
+    });
+
+    updateMIDIStatusIndicators();
+
+    try {
+        const savedPorts = await loadPortSelections();
+        if (savedPorts) {
+            if (savedPorts.input && midiAccess.inputs.has(savedPorts.input)) {
+                selectInput(savedPorts.input); domElements.inputsSelect.value = savedPorts.input;
+            }
+            if (savedPorts.outputs) {
+                Object.entries(savedPorts.outputs).forEach(([type, id]) => {
+                    if (id && midiAccess.outputs.has(id)) {
+                        selectOutput(type, id);
+                        const selector = (type === 'main') ? domElements.mainOutputsSelect : domElements[`${type}OutputsSelect`];
+                        if (selector) selector.value = id;
+                    }
+                });
+            }
+        } else { // First run or no saved ports - use defaults
+            if (hasInputs) {
+                for (let inp of midiAccess.inputs.values()) {
+                    if (inp.name === DEFAULT_INPUT_NAME) {
+                        selectInput(inp.id); domElements.inputsSelect.value = inp.id; break;
+                    }
+                }
+            }
+            if (hasOutputs) {
+                 Object.entries(DEFAULT_OUTPUT_NAMES).forEach(([type, name]) => {
+                    for (let outp of midiAccess.outputs.values()) {
+                        if (outp.name === name) {
+                            selectOutput(type, outp.id);
+                            const selector = (type === 'main') ? domElements.mainOutputsSelect : domElements[`${type}OutputsSelect`];
+                            if (selector) selector.value = outp.id;
+                            break; 
+                        }
+                    }
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error loading port selections:', error);
+        showNotification('Error loading saved port selections', 'warning');
+    }
+    // Event listeners are set up in initMIDIPortControls
+}
+
+function onMIDISuccess(access) {
+    midiAccess = access;
+    midiAccess.inputs.forEach(trackPortState);
+    midiAccess.outputs.forEach(trackPortState);
+    
+    refreshPortLists(); // This will also attempt to load/set saved/default ports
+    showNotification('MIDI system initialized', 'success');
+
+    midiAccess.onstatechange = (e) => {
+        const port = e.port;
+        const portType = port.type.charAt(0).toUpperCase() + port.type.slice(1);
+        if (portChangeTimeout) clearTimeout(portChangeTimeout);
+        
+        portChangeTimeout = setTimeout(() => {
+            showNotification(`${portType} port '${port.name}' ${port.state}`, port.state === 'connected' ? 'info' : 'warning');
+            if (port.state !== lastPortStates.get(port.id)) {
+                trackPortState(port);
+                refreshPortLists();
+            } else if (port.type === "input" && currentInput && port.id === currentInput.id && port.state === "disconnected") {
+                selectInput(null); refreshPortLists();
+            } else if (port.type === "output") {
+                let changed = false;
+                for (const type in currentOutputs) {
+                    if (currentOutputs[type] && port.id === currentOutputs[type].id && port.state === "disconnected") {
+                        selectOutput(type, null); changed = true;
+                    }
+                }
+                if (changed) refreshPortLists();
+            }
+        }, PORT_CHANGE_DELAY);
+    };
+}
+
+// --- IndexedDB Management ---
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = (event) => {
+            showNotification('Failed to initialize storage: ' + event.target.error.message, 'warning');
+            reject(event.target.error);
+        };
+        request.onsuccess = (event) => {
+            db = event.target.result;
+            resolve();
+        };
+        request.onupgradeneeded = (event) => {
+            const currentDb = event.target.result;
+            if (!currentDb.objectStoreNames.contains(STORE_NAME_SONGS)) {
+                currentDb.createObjectStore(STORE_NAME_SONGS);
+            }
+            if (!currentDb.objectStoreNames.contains(STORE_NAME_PORTS)) {
+                currentDb.createObjectStore(STORE_NAME_PORTS);
+            }
+        };
+    });
+}
+
+async function savePortSelections() {
+    if (!db) { /* console.warn('DB not ready for savePortSelections'); */ return; } // DB might not be ready on initial load
+    return new Promise((resolve, reject) => {
+        try {
+            const tx = db.transaction(STORE_NAME_PORTS, 'readwrite');
+            const store = tx.objectStore(STORE_NAME_PORTS);
+            const portSelections = {
+                input: currentInput ? currentInput.id : null,
+                outputs: {
+                    main: currentOutputs.main ? currentOutputs.main.id : null,
+                    bass: currentOutputs.bass ? currentOutputs.bass.id : null,
+                    chord: currentOutputs.chord ? currentOutputs.chord.id : null,
+                    string: currentOutputs.string ? currentOutputs.string.id : null
+                }
+            };
+            const request = store.put(portSelections, 'current');
+            request.onsuccess = () => resolve();
+            request.onerror = (event) => reject(event.target.error);
+        } catch (err) {
+            console.error("Error in savePortSelections transaction:", err);
+            reject(err);
+        }
+    });
+}
+
+async function loadPortSelections() {
+    if (!db) await initDB(); // Ensure DB is initialized
+    return new Promise((resolve, reject) => {
+        try {
+            const tx = db.transaction(STORE_NAME_PORTS, 'readonly');
+            const store = tx.objectStore(STORE_NAME_PORTS);
+            const request = store.get('current');
+            request.onsuccess = (event) => resolve(event.target.result);
+            request.onerror = (event) => reject(event.target.error);
+        } catch (err) {
+            console.error("Error in loadPortSelections transaction:", err);
+            reject(err);
+        }
+    });
+}
+
+function debounceSave() {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+        saveChordsToDB().catch(console.error);
+    }, SAVE_DELAY);
+}
+
+async function saveChordsToDB() {
+    if (!db) await initDB();
+    return new Promise((resolve, reject) => {
+        const songName = getSongNameFromHash();
+        const tx = db.transaction(STORE_NAME_SONGS, 'readwrite');
+        const store = tx.objectStore(STORE_NAME_SONGS);
+        const notes = domElements.songNotesTextarea ? domElements.songNotesTextarea.value : '';
+        const data = { chords: Chords.pads, notes, sequence: Chords.sequence };
+        const request = store.put(data, songName);
+        
+        request.onsuccess = () => {
+            const saveIndicator = document.createElement('div');
+            saveIndicator.className = 'save-indicator'; // Styled by CSS
+            saveIndicator.textContent = '✓ Saved'; 
+            document.body.appendChild(saveIndicator);
+            requestAnimationFrame(() => { saveIndicator.style.opacity = '1'; });
+            setTimeout(() => { 
+                saveIndicator.style.opacity = '0'; 
+                setTimeout(() => saveIndicator.remove(), 300); 
+            }, SAVE_INDICATOR_DURATION);
+
+            // Update notes area with pad chords list - current logic tries to preserve user notes.
+            // This part can be complex and might need rethinking for better UX.
+            if (domElements.songNotesTextarea) {
+                let padLines = Object.entries(Chords.pads)
+                    .filter(([, obj]) => obj && Array.isArray(obj.chord) && obj.chord.length > 0)
+                    .map(([pad, obj]) => {
+                        const chordName = typeof detectChord === 'function' ? detectChord(obj.chord.map(getNoteNameFromMIDI)) : 'Chord';
+                        const noteNames = obj.chord.map(getNoteNameFromMIDI).join(' ');
+                        return `Pad ${pad}: ${chordName || 'Chord'} (${noteNames})`;
+                    });
+                // Attempt to separate user notes from auto-generated content.
+                // This assumes user notes are before a "double newline" or the auto-generated block.
+                let userNotes = domElements.songNotesTextarea.value.split(/\n\n-{5,}\n/)[0] || domElements.songNotesTextarea.value.split(/\n-{5,}\n/)[0] || domElements.songNotesTextarea.value;
+                
+                if (padLines.length > 0) {
+                    const separator = '\n\n----------\n'; // More distinct separator
+                    domElements.songNotesTextarea.value = userNotes.trim() + separator + padLines.join('\n');
+                } else {
+                    domElements.songNotesTextarea.value = userNotes.trim(); // Just user notes if no pads
+                }
+            }
+            resolve();
+        };
+        request.onerror = (event) => { 
+            showNotification('Error saving data for ' + songName, 'error'); 
+            reject(event.target.error); 
+        };
+    });
+}
+
+async function loadChordsFromDB() {
+    if (!db) await initDB();
+    return new Promise((resolve, reject) => {
+        const songName = getSongNameFromHash();
+        const tx = db.transaction(STORE_NAME_SONGS, 'readonly');
+        const store = tx.objectStore(STORE_NAME_SONGS);
+        const request = store.get(songName);
+        
+        request.onsuccess = (event) => {
+            Chords.pads = {}; Chords.sequence = []; Chords.string = [];
+            const data = event.target.result;
+            if (data) {
+                if (data.chords) Object.assign(Chords.pads, data.chords);
+                if (data.sequence) Chords.sequence = data.sequence;
+                if (domElements.songNotesTextarea) domElements.songNotesTextarea.value = data.notes || '';
+                showNotification(`Loaded: ${songName}`, 'success');
+            } else {
+                showNotification(`No saved data for: ${songName}. Started new song.`, 'info');
+                if (domElements.songNotesTextarea) domElements.songNotesTextarea.value = '';
+            }
+            resetSequenceState();
+            updateStatus();
+            resolve(data);
+        };
+        request.onerror = (event) => { 
+            showNotification('Error loading data for ' + songName, 'error'); 
+            reject(event.target.error); 
+        };
+    });
+}
+
+// --- Song Management ---
+function getSongNameFromHash() {
+    const hash = window.location.hash.substring(1);
+    return hash ? decodeURIComponent(hash.startsWith('song=') ? hash.split('=')[1] : hash) : 'default';
+}
+
+async function getAllSongNamesFromDB() {
+    if (!db) await initDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME_SONGS, 'readonly');
+        const store = tx.objectStore(STORE_NAME_SONGS);
+        const req = store.getAllKeys(); // Standard way
+        if (!req) { reject('IndexedDB getAllKeys not supported'); return; }
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = (event) => reject(event.target.error);
+    });
+}
+
+async function loadNextSong() {
+    const songNames = await getAllSongNamesFromDB();
+    if (!songNames.length) { showNotification('No songs available.', 'warning'); return; }
+    const current = getSongNameFromHash();
+    let idx = songNames.indexOf(current);
+    idx = (idx === -1) ? 0 : (idx + 1) % songNames.length; // If current not found, start from first
+    window.location.hash = 'song=' + encodeURIComponent(songNames[idx]);
+    // hashchange listener will call loadChordsFromDB
+}
+
+async function loadPreviousSong() {
+    const songNames = await getAllSongNamesFromDB();
+    if (!songNames.length) { showNotification('No songs available.', 'warning'); return; }
+    const current = getSongNameFromHash();
+    let idx = songNames.indexOf(current);
+    idx = (idx === -1) ? 0 : (idx - 1 + songNames.length) % songNames.length;
+    window.location.hash = 'song=' + encodeURIComponent(songNames[idx]);
+}
+
+function setupAutoLoadOnSongChange() {
+    window.addEventListener('hashchange', () => { 
+        loadChordsFromDB(); 
+        // Reset song-specific states
+        resetSequenceState();
+        Chords.string = []; // Clear current loaded chord
+        currentInversion = 0;
+        tiltAmount = 0.0;
+        transposeOffset = 0;
+        fullChordOctaveOffset = 0;
+        stringOctaveOffset = 0;
+        updateStatus(); // Update UI for the new song
+    });
+}
+
+// --- Sequence Logic ---
+function loadChordFromSequence(index) {
+    if (index < 0 || index >= Chords.sequence.length) {
+        showNotification(`Invalid sequence step: ${index + 1}`, 'warning'); return;
+    }
+    const step = Chords.sequence[index];
+    let loadedSuccessfully = false;
+
+    if (step !== undefined) {
+        if (Array.isArray(step)) { // Step is an array of notes (live recorded)
+            Chords.string = [...step];
+            loadedSuccessfully = true;
+        } else if (Chords.pads[step] && Chords.pads[step].chord) { // Step is a pad number
+            const pad = Chords.pads[step];
+            Chords.string = [...(pad.bass || []), ...pad.chord];
+            loadedSuccessfully = true;
+        } else {
+             showNotification(`Seq step ${index + 1} (Pad ${step}) is empty/invalid.`, 'warning');
+             Chords.string = [];
+        }
+        
+        updateStatus();
+        
+        if (loadedSuccessfully) {
+            showNotification(`Loaded step ${index + 1}/${Chords.sequence.length}`, 'info');
+            if (isPadTriggerMode) {
+                const chordNotes = Chords.string.map(n => ({ pitch: n + transposeOffset + (fullChordOctaveOffset * OCTAVE_SEMITONES), velocity: DEFAULT_TRIGGER_VELOCITY }));
+                const tiltedNotes = applyVelocityTilt(chordNotes, 0);
+                Chords.triggers[NOTE_FULL_CHORD_TRIGGER] = tiltedNotes.map(n => n.pitch);
+                sendChord(tiltedNotes.map(n => n.pitch), tiltedNotes[0]?.velocity || DEFAULT_TRIGGER_VELOCITY, MIDI_CHANNEL_MAIN, 'chord');
+            }
+        }
+    } else {
+        showNotification(`Sequence step ${index + 1} is undefined.`, 'warning');
+        Chords.string = []; updateStatus();
+    }
+}
+
+function updateSequenceDisplay() {
+    if (!domElements.sequenceDisplay || !domElements.sequenceModeIndicator || !domElements.currentStepIndicator) return;
+    
+    domElements.sequenceDisplay.innerHTML = Chords.sequence.map((step, index) => {
+        let chordNameText = 'Empty Step';
+        let stepNotes = [];
+        if (Array.isArray(step)) {
+            stepNotes = step;
+        } else if (Chords.pads[step] && Chords.pads[step].chord) {
+            stepNotes = Chords.pads[step].chord;
+        }
+        
+        if (stepNotes.length > 0 && typeof detectChord === 'function') {
+            chordNameText = detectChord(stepNotes.map(n => getNoteNameFromMIDI(n))) || 'Chord';
+        } else if (!Array.isArray(step)) { // If it's a pad number but pad is empty
+             chordNameText = `Pad ${step}`;
+        }
+
+        return `<div class="sequence-step ${index === Chords.sequenceIndex && isSequenceMode ? 'active' : ''}">
+            ${index + 1}: ${chordNameText}
+        </div>`;
+    }).join('');
+    
+    domElements.sequenceModeIndicator.textContent = isRecordingSequence ? 'REC Sequence' : (isSequenceMode ? '▶ Sequence Play' : '⏸ Sequence Idle');
+    if (Chords.sequence.length > 0) {
+        domElements.currentStepIndicator.textContent = `Step: ${Chords.sequenceIndex + 1}/${Chords.sequence.length}`;
+    } else {
+        domElements.currentStepIndicator.textContent = 'No Sequence';
+    }
+}
+
+function resetSequenceState() {
+    // Only reset player/recorder state, not Chords.sequence data itself
+    isRecordingSequence = false;
+    isSequenceMode = false;
+    pendingSequenceChord = null;
+    isWaitingForSequenceStepConfirmation = false;
+    Chords.sequenceIndex = 0;
+    updateSequenceDisplay();
+    // showNotification('Sequence player/recorder state reset', 'info'); // Can be noisy
+}
+
+function enterSequenceMode() {
+    if (Chords.sequence.length === 0) { showNotification('No sequence to play', 'warning'); return; }
+    isSequenceMode = true;
+    isRecordingSequence = false;
+    Chords.sequenceIndex = 0;
+    loadChordFromSequence(0);
+    showNotification('Sequence mode active. Use Prev/Next.', 'info');
+}
+
+function exitSequenceMode() {
+    isSequenceMode = false;
+    updateSequenceDisplay();
+    showNotification('Exited sequence mode', 'info');
+    // Optionally clear Chords.string or send note offs
+    // clearAllChordNotes(); Chords.string = []; updateStatus();
+}
+
+// --- Main Status Update Function ---
+function updateStatus() {
+    updateModeDisplay();
+    
+    if (mode === MODE_STOP) {
+        clearAllChordNotes();
+        if (isSequenceMode) exitSequenceMode();
+    }
+    
+    updateChordDisplay();
+    updateCurrentPianoView(); // Update the "current-piano" display
+    
+    // Update song notes with current chord (live log like behavior)
+    // This behavior might be changed based on desired UX.
+    if (domElements.songNotesTextarea) {
+        const currentChordForDisplay = (mode === MODE_RECORD) ? Chords.record : Chords.string;
+        if (currentChordForDisplay.length > 0) {
+            const noteNames = currentChordForDisplay.map(getNoteNameFromMIDI).join(' ');
+            const chordLine = `Chord: ${noteNames}`;
+            const notesLines = domElements.songNotesTextarea.value.split('\n');
+            while (notesLines.length > 0 && notesLines[notesLines.length-1].trim() === '') notesLines.pop();
+            const lastLine = notesLines.length > 0 ? notesLines[notesLines.length-1] : '';
+            if (lastLine !== chordLine) { // Avoid duplicate appends
+                domElements.songNotesTextarea.value = domElements.songNotesTextarea.value.replace(/(\n)*$/, '') + 
+                                                     (domElements.songNotesTextarea.value.trim().length ? '\n' : '') + 
+                                                     chordLine + '\n';
+            }
+        }
+    }
+    
+    updateInversionDisplay();
+    updateTiltDisplay();
+    updateSequenceDisplay();
+    
+    debounceSave(); // Save song data (pads, sequence, notes)
+}
+
+
+// --- UI Creation ---
+// pianoKeyElements: pianoKeyElements[pianoId][noteNumber] -> SVGElement
+const pianoKeyElements = {}; 
+
+function createPianoSectionsDOM() {
+    const sectionsData = {
+        current: { title: 'Current Chord', id: 'current-piano' },
+        chord: { title: 'Chord Output', id: 'chord-piano' },
+        bass: { title: 'Bass Output', id: 'bass-piano' },
+        string: { title: 'String Output', id: 'string-piano' },
+        main: { title: 'Controller: MIDI Input', id: 'main-piano' }
+    };
+    const pianoSectionsContainer = document.createElement('div');
+    pianoSectionsContainer.id = 'piano-sections';
+    document.body.appendChild(pianoSectionsContainer); // Or insert at a specific point
+
+    ['current', 'main', 'chord', 'bass', 'string'].forEach(type => {
+        const info = sectionsData[type];
+        const section = document.createElement('div');
+        section.className = 'piano-section';
+        // Cache section elements if needed later for frequent access, e.g., title change
+        if (type === 'main') domElements.mainPianoSection = section;
+        if (type === 'chord') domElements.chordPianoSection = section;
+
+
+        section.innerHTML = `<h3>${info.title}</h3>`;
+        
+        const pianoContainer = document.createElement('div');
+        pianoContainer.className = 'piano-container';
+        pianoContainer.id = info.id;
+        if (type === 'current') domElements.currentPianoContainer = pianoContainer;
+        section.appendChild(pianoContainer);
+
+        if (type === 'current') {
+            const chordInfoDiv = document.createElement('div');
+            chordInfoDiv.className = 'current-chord-info';
+            chordInfoDiv.innerHTML = `
+                <div>Current Chord: <code><span id="currentChord">No Chord</span></code></div>
+                <div>Chord Name: <code><span id="chordName">-</span></code></div>`;
+            section.appendChild(chordInfoDiv);
+        }
+
+        if (type === 'main') {
+            const mainControls = document.createElement('div');
+            mainControls.className = 'main-midi-controls port-controls'; // Styled by CSS
+            
+            const inputGroup = document.createElement('div'); inputGroup.className = 'port-label';
+            inputGroup.innerHTML = `<span class="port-status disconnected"></span> MIDI Input: <span class="midi-activity" id="input-activity"></span>`;
+            const inputSelect = document.createElement('select'); inputSelect.id = 'inputs'; // Cached as domElements.inputsSelect
+            inputGroup.appendChild(inputSelect); mainControls.appendChild(inputGroup);
+
+            const outputGroup = document.createElement('div'); outputGroup.className = 'port-label';
+            outputGroup.innerHTML = `<span class="port-status disconnected"></span> Main Passthru: <span class="midi-activity" id="main-output-activity"></span>`;
+            const outputSelect = document.createElement('select'); outputSelect.id = 'outputs'; // Cached as domElements.mainOutputsSelect
+            outputGroup.appendChild(outputSelect); mainControls.appendChild(outputGroup);
+            section.appendChild(mainControls);
+        }
+        
+        if (['bass', 'chord', 'string'].includes(type)) {
+            const outputSelectorContainer = document.createElement('div');
+            outputSelectorContainer.className = 'output-selector-container port-controls'; // Styled by CSS
+            const label = document.createElement('div'); label.className = 'port-label';
+            label.innerHTML = `<span class="port-status disconnected"></span> ${info.title}: <span class="midi-activity" id="${type}-output-activity"></span>`;
+            const select = document.createElement('select'); select.id = `${type}-outputs`; // Cached as domElements.bassOutputsSelect etc.
+            label.appendChild(select); outputSelectorContainer.appendChild(label);
+            section.appendChild(outputSelectorContainer);
+        }
+        pianoSectionsContainer.appendChild(section);
+    });
+    updateInversionDisplay(); // Initial call to create the display structure
+}
+
+function createPianoKeyboardSVG() {
+    const whiteKeyBorderOffset = SVG_KEY_STROKE_WIDTH;
+    
+    ['current-piano', 'main-piano', 'bass-piano', 'chord-piano', 'string-piano'].forEach(pianoId => {
+        const pianoContainer = document.getElementById(pianoId);
+        if (!pianoContainer) { console.warn(`Piano container ${pianoId} not found`); return; }
+
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        const totalWhiteKeys = countWhiteKeysInPianoRange(PIANO_START_NOTE, PIANO_END_NOTE);
+        svg.setAttribute('width', totalWhiteKeys * WHITE_KEY_WIDTH + (2 * whiteKeyBorderOffset));
+        svg.setAttribute('height', WHITE_KEY_HEIGHT + (2 * whiteKeyBorderOffset));
+        pianoKeyElements[pianoId] = {}; // Initialize cache for this piano's keys
+        
+        const whiteKeysGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const blackKeysGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        let whiteKeyIndex = 0;
+
+        for (let note = PIANO_START_NOTE; note <= PIANO_END_NOTE; note++) {
+            const noteName = getNoteNameFromMIDI(note); 
+            const isBlackKey = noteName.includes('#');
+            
+            const keyRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            keyRect.dataset.note = note; 
+            pianoKeyElements[pianoId][note] = keyRect; // Cache SVG key element
+            
+            const keyText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            keyText.setAttribute('class', 'key-text'); 
+            keyText.textContent = noteName;
+            keyText.style.fontSize = SVG_KEY_TEXT_FONT_SIZE;
+
+            if (!isBlackKey) {
+                keyRect.setAttribute('x', whiteKeyIndex * WHITE_KEY_WIDTH + whiteKeyBorderOffset); 
+                keyRect.setAttribute('y', whiteKeyBorderOffset);
+                keyRect.setAttribute('width', WHITE_KEY_WIDTH - whiteKeyBorderOffset);
+                keyRect.setAttribute('height', WHITE_KEY_HEIGHT);
+                keyRect.setAttribute('class', 'piano-key white');
+                
+                keyText.setAttribute('x', whiteKeyIndex * WHITE_KEY_WIDTH + WHITE_KEY_WIDTH/2 + whiteKeyBorderOffset);
+                keyText.setAttribute('y', WHITE_KEY_HEIGHT - KEY_TEXT_Y_OFFSET + whiteKeyBorderOffset); 
+                keyText.setAttribute('text-anchor', 'middle');
+                whiteKeysGroup.appendChild(keyRect);
+                whiteKeysGroup.appendChild(keyText);
+                whiteKeyIndex++;
+            } else {
+                const prevWhiteKeyX = (whiteKeyIndex - 1) * WHITE_KEY_WIDTH;
+                keyRect.setAttribute('x', prevWhiteKeyX + WHITE_KEY_WIDTH - BLACK_KEY_WIDTH/2 + whiteKeyBorderOffset); 
+                keyRect.setAttribute('y', whiteKeyBorderOffset);
+                keyRect.setAttribute('width', BLACK_KEY_WIDTH); 
+                keyRect.setAttribute('height', BLACK_KEY_HEIGHT);
+                keyRect.setAttribute('class', 'piano-key black');
+
+                keyText.setAttribute('x', prevWhiteKeyX + WHITE_KEY_WIDTH + whiteKeyBorderOffset);
+                keyText.setAttribute('y', BLACK_KEY_HEIGHT - KEY_TEXT_Y_OFFSET + whiteKeyBorderOffset); 
+                keyText.setAttribute('text-anchor', 'middle');
+                keyText.setAttribute('fill', '#fff');
+                blackKeysGroup.appendChild(keyRect);
+                blackKeysGroup.appendChild(keyText);
+            }
+        }
+        svg.appendChild(whiteKeysGroup); 
+        svg.appendChild(blackKeysGroup);
+        pianoContainer.appendChild(svg);
+    });
+}
+
+function updateKeyboard(note, isNoteOn, outputType = 'main') {
+    const pianoId = `${outputType}-piano`; 
+    const keyElement = pianoKeyElements[pianoId]?.[note];
+    if (keyElement) {
+        if (isNoteOn) keyElement.classList.add('active');
+        else keyElement.classList.remove('active');
+    }
+}
+
+function countWhiteKeysInPianoRange(startNote, endNote) {
+    let count = 0; 
+    for (let note = startNote; note <= endNote; note++) {
+        if (!getNoteNameFromMIDI(note).includes('#')) count++; 
+    }
+    return count;
+}
+
+function addSongControlsDOM() {
+    const navDiv = document.createElement('div');
+    navDiv.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 10px;';
+
+    const prevBtn = document.createElement('button');
+    prevBtn.textContent = '⟨ Prev Song'; prevBtn.id = 'song-prev-btn'; prevBtn.title = 'Load previous song';
+    const nextBtn = document.createElement('button');
+    nextBtn.textContent = 'Next Song ⟩'; nextBtn.id = 'song-next-btn'; nextBtn.title = 'Load next song';
+    navDiv.appendChild(prevBtn); navDiv.appendChild(nextBtn);
+
+    prevBtn.onclick = () => { if (mode === MODE_STOP) loadPreviousSong(); else showNotification('Stop mode required for song navigation.', 'info'); };
+    nextBtn.onclick = () => { if (mode === MODE_STOP) loadNextSong(); else showNotification('Stop mode required for song navigation.', 'info'); };
+
+    const controlsDiv = document.createElement('div');
+    controlsDiv.className = 'song-controls';
+    controlsDiv.appendChild(navDiv);
+
+    const notesLabel = document.createElement('label');
+    notesLabel.textContent = 'Song Notes / Ideas:'; 
+    notesLabel.style.cssText = 'font-weight: bold; display: block; margin-bottom: 5px;';
+
+    const notesTextarea = document.createElement('textarea');
+    notesTextarea.id = 'song-notes'; // Cached as domElements.songNotesTextarea
+    notesTextarea.rows = 4; 
+    notesTextarea.placeholder = 'Write your notes, lyrics, or ideas...';
+    notesTextarea.addEventListener('input', debounceSave);
+
+    controlsDiv.appendChild(notesLabel);
+    controlsDiv.appendChild(notesTextarea);
+
+    // Insert after sequence section, before piano sections
+    const sequenceSection = document.querySelector('.sequence-section');
+    if (sequenceSection && sequenceSection.parentNode) {
+        sequenceSection.parentNode.insertBefore(controlsDiv, sequenceSection.nextSibling);
+    } else { // Fallback if sequence section isn't found (should not happen)
+        document.body.appendChild(controlsDiv);
+    }
+    
+    window.addEventListener('hashchange', updateSongNameDisplayInUI);
+    updateSongNameDisplayInUI(); // Initial call
+}
+
+function updateSongNameDisplayInUI() {
+    const songName = getSongNameFromHash();
+    if (domElements.songNameDisplay) domElements.songNameDisplay.textContent = `Song: ${songName || 'default'}`;
+}
+
+
+
+function registerButtons() {
+    buttonManager.registerButton(CC_RECORD, {
+        onPress: () => {
+            if (mode === MODE_RECORD) {
+                isArmingSave = true; selectedStoragePad = null;
+                showNotification('SAVE ARMED: Select a pad, then release Record to save.', 'info');
+            } else {
+                showNotification('Record pressed. Release to enter Record Mode, or play notes, select pad & release to save.', 'info');
+            }
+        },
+        onRelease: (duration) => {
+            if (isRecordingSequence) { // Finalizing sequence recording
+                if (pendingSequenceChord && pendingSequenceChord.length > 0 && isWaitingForSequenceStepConfirmation) {
+                    Chords.sequence.push([...pendingSequenceChord]);
+                    showNotification('Last pending chord added to sequence.', 'info');
+                }
+                pendingSequenceChord = null; isWaitingForSequenceStepConfirmation = false; 
+                isRecordingSequence = false;
+                if (Chords.sequence.length > 0) { 
+                    saveChordsToDB(); showNotification(`Sequence: ${Chords.sequence.length} chords saved.`, 'success'); 
+                } else { 
+                    showNotification('No chords in sequence to save.', 'warning'); 
+                }
+                mode = MODE_PLAY; isMainOutputMuted = true;
+                isArmingSave = false; selectedStoragePad = null; 
+                updateStatus(); showNotification('PLAY Mode - Main muted', 'info');
+                return;
+            }
+
+            if (isArmingSave) { // Finalizing pad save
+                if (selectedStoragePad !== null && Chords.record.length > 0) {
+                    Chords.pads[selectedStoragePad] = { chord: [...Chords.record] };
+                    showNotification(`Chord saved to pad ${selectedStoragePad}`, 'success');
+                    Chords.record = []; 
+                } else if (selectedStoragePad === null && Chords.record.length > 0) {
+                    showNotification('SAVE CANCELLED: No pad selected.', 'warning');
+                } else if (Chords.record.length === 0 && selectedStoragePad !== null) {
+                    showNotification(`SAVE CANCELLED: No notes to save to pad ${selectedStoragePad}.`, 'warning');
+                } else { // No notes and no pad
+                    showNotification('SAVE CANCELLED: No notes and no pad selected.', 'warning');
+                }
+                isArmingSave = false; selectedStoragePad = null; 
+            } else if (duration < RECORD_HOLD_THRESHOLD && mode !== MODE_RECORD) { // Enter Record Mode
+                mode = MODE_RECORD; isMainOutputMuted = false;
+                Chords.record = []; isArmingSave = false; selectedStoragePad = null; 
+                showNotification('RECORD Mode. Play notes. Press Record again to arm saving.', 'info');
+            } else if (duration < RECORD_HOLD_THRESHOLD && mode === MODE_RECORD && !isArmingSave) {
+                showNotification('In Record mode. Play notes, or press Record again to arm saving.', 'info');
+            }
+            updateStatus();
+        },
+        onHold: () => { // Start sequence recording
+            if (!isRecordingSequence && mode !== MODE_RECORD) { // Holding Record from non-Record mode starts seq rec
+                isRecordingSequence = true; isArmingSave = false; selectedStoragePad = null;
+                Chords.sequence = []; pendingSequenceChord = null; isWaitingForSequenceStepConfirmation = false;
+                showNotification('Sequence Recording: Play chord, then Next Step (Data1+Data2), or add existing Pad. Release Record to finalize.', 'info', 5000);
+            } else if (isArmingSave) { // If hold initiated while armed for save, disarm.
+                isArmingSave = false; showNotification('Save arming cancelled due to hold.', 'info');
+            }
+        }
+    });
+    buttonManager.registerButton(CC_PLAY,  { onPress: () => { mode = MODE_PLAY; isMainOutputMuted = true; updateStatus(); showNotification('PLAY Mode - Main muted', 'info'); } });
+    buttonManager.registerButton(CC_STOP,  { onPress: () => { mode = MODE_STOP; isMainOutputMuted = false; updateStatus(); showNotification('STOP Mode - Main unmuted', 'info'); } });
+    
+    buttonManager.registerButton(CC_CHORD_TRIGGER_TOGGLE, {
+        onPress: () => {
+            isPadTriggerMode = !isPadTriggerMode;
+            showNotification(`Chord trigger ${isPadTriggerMode ? 'ON' : 'OFF'}`, 'info');
+            if (isPadTriggerMode && Chords.string.length > 0) {
+                const chordNotes = Chords.string.map(n => ({ pitch: n + transposeOffset + (fullChordOctaveOffset * OCTAVE_SEMITONES), velocity: DEFAULT_TRIGGER_VELOCITY }));
+                const tiltedNotes = applyVelocityTilt(chordNotes, 0);
+                Chords.triggers[NOTE_FULL_CHORD_TRIGGER] = tiltedNotes.map(n => n.pitch);
+                sendChord(tiltedNotes.map(n => n.pitch), tiltedNotes[0]?.velocity || DEFAULT_TRIGGER_VELOCITY, MIDI_CHANNEL_MAIN, 'chord');
+            }
+        }
+    });
+
+    buttonManager.registerSimultaneousGroup('sequenceModeToggle', [CC_SEQUENCE_PREV, CC_SEQUENCE_NEXT], () => {
+        if (!isRecordingSequence) { // Don't toggle sequence play mode while recording sequence
+            if (isSequenceMode) exitSequenceMode();
+            else if (Chords.sequence.length > 0) enterSequenceMode();
+            else showNotification('No sequence available to enter sequence mode.', 'warning');
+        }
+    });
+    buttonManager.registerButton(CC_SEQUENCE_PREV, {
+        onPress: async () => { 
+            if (isSequenceMode && Chords.sequence.length > 0 && !isRecordingSequence) {
+                Chords.sequenceIndex = (Chords.sequenceIndex - 1 + Chords.sequence.length) % Chords.sequence.length; 
+                loadChordFromSequence(Chords.sequenceIndex); 
+            } else if (mode === MODE_STOP && !isSequenceMode && !isRecordingSequence) {
+                await loadPreviousSong();
+            }
+        },
+        simultaneousGroup: 'sequenceModeToggle'
+    });
+    buttonManager.registerButton(CC_SEQUENCE_NEXT, {
+        onPress: async () => { 
+            if (isSequenceMode && Chords.sequence.length > 0 && !isRecordingSequence) {
+                Chords.sequenceIndex = (Chords.sequenceIndex + 1) % Chords.sequence.length; 
+                loadChordFromSequence(Chords.sequenceIndex); 
+            } else if (mode === MODE_STOP && !isSequenceMode && !isRecordingSequence) {
+                await loadNextSong();
+            }
+        },
+        simultaneousGroup: 'sequenceModeToggle'
+    });
+
+    buttonManager.registerSimultaneousGroup('sequenceStepAdvance', [CC_SEQUENCE_NEXT, CC_SEQUENCE_ADVANCE_DATA2], () => {
+        if (isRecordingSequence && isWaitingForSequenceStepConfirmation) {
+            if (pendingSequenceChord && pendingSequenceChord.length > 0) {
+                if (Chords.sequence.length < MAX_SEQUENCE_LENGTH) {
+                    Chords.sequence.push([...pendingSequenceChord]); // Add live recorded chord
+                    const stepNumber = Chords.sequence.length;
+                    const chordName = typeof detectChord === 'function' ? detectChord(pendingSequenceChord.map(n=>getNoteNameFromMIDI(n))) : 'Chord';
+                    showNotification(`Step ${stepNumber} recorded: ${chordName || 'Chord'}. Play chord for Step ${stepNumber + 1}.`, 'success');
+                    pendingSequenceChord = null; isWaitingForSequenceStepConfirmation = false;
+                    updateStatus();
+                } else {
+                    showNotification(`Max sequence length (${MAX_SEQUENCE_LENGTH}) reached.`, 'warning');
+                }
+            } else {
+                showNotification('No chord played for this step. Play a chord first.', 'warning');
+            }
+        } else if (isRecordingSequence && !isWaitingForSequenceStepConfirmation) {
+            showNotification('Play a chord first before trying to record a sequence step.', 'info');
+        }
+    });
+    // CC_SEQUENCE_ADVANCE_DATA2 alone does nothing, only used in simultaneous group.
+    buttonManager.registerButton(CC_SEQUENCE_ADVANCE_DATA2, { onPress: () => {}, simultaneousGroup: 'sequenceStepAdvance'});
+}
+
+
+// --- Initialization ---
+function cacheDOMElements() {
+    domElements.notificationArea = document.getElementById('notification-area');
+    domElements.songNameDisplay = document.getElementById('song-name');
+    domElements.modeDisplay = document.getElementById('mode-display');
+    
+    domElements.sequenceDisplay = document.getElementById('sequence-display');
+    domElements.sequenceModeIndicator = document.getElementById('sequence-mode-indicator');
+    domElements.currentStepIndicator = document.getElementById('current-step-indicator');
+
+    // MIDI Port Selectors (will be available after createPianoSectionsDOM)
+    domElements.inputsSelect = document.getElementById('inputs');
+    domElements.mainOutputsSelect = document.getElementById('outputs');
+    domElements.bassOutputsSelect = document.getElementById('bass-outputs');
+    domElements.chordOutputsSelect = document.getElementById('chord-outputs');
+    domElements.stringOutputsSelect = document.getElementById('string-outputs');
+    
+    domElements.songNotesTextarea = document.getElementById('song-notes');
+    // Piano section elements (main, chord) are cached in createPianoSectionsDOM
+    // Current piano SVG container is also cached there
+}
+
+function initMIDIPortControls() {
+    // Attach event listeners to port selectors after they are populated
+    if (domElements.inputsSelect) {
+        domElements.inputsSelect.onchange = () => {
+            selectInput(domElements.inputsSelect.value); savePortSelections();
+            showNotification(`Input: ${domElements.inputsSelect.value ? domElements.inputsSelect.options[domElements.inputsSelect.selectedIndex].text : 'None'}`, 'info');
+            updateMIDIStatusIndicators();
+        };
+    }
+    if (domElements.mainOutputsSelect) {
+        domElements.mainOutputsSelect.onchange = () => {
+            selectOutput('main', domElements.mainOutputsSelect.value); savePortSelections();
+            showNotification(`Main Out: ${domElements.mainOutputsSelect.value ? domElements.mainOutputsSelect.options[domElements.mainOutputsSelect.selectedIndex].text : 'None'}`, 'info');
+            updateMIDIStatusIndicators();
+        };
+    }
+    ['bass', 'chord', 'string'].forEach(type => {
+        const selector = domElements[`${type}OutputsSelect`];
+        if (selector) {
+            selector.onchange = () => {
+                selectOutput(type, selector.value); savePortSelections();
+                showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} Out: ${selector.value ? selector.options[selector.selectedIndex].text : 'None'}`, 'info');
+                updateMIDIStatusIndicators();
+            };
+        }
+    });
+}
+
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // 1. Create dynamic UI elements
+    createPianoSectionsDOM(); // Creates piano sections and MIDI port selectors
+    addSongControlsDOM();     // Adds song navigation and notes textarea
+    
+    // 2. Cache DOM elements (including those created above)
+    cacheDOMElements(); // Populates domElements object
+
+    // 3. Create SVG Pianos
+    createPianoKeyboardSVG(); // Populates SVG pianos into containers
+
+    // 4. Register button handlers
+    registerButtons();
+
+    // 5. Initial UI state update
+    updateStatus();
+
+    // 6. Setup keyboard navigation for songs
+    window.addEventListener('keydown', async (e) => {
+        if (mode !== MODE_STOP) return;
+        if (document.activeElement && (document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT')) return;
+        if (e.key === 'ArrowLeft') { e.preventDefault(); await loadPreviousSong(); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); await loadNextSong(); }
+    });
+
+    // 7. Initialize MIDI system
+    if (navigator.requestMIDIAccess) {
+        try {
+            const access = await navigator.requestMIDIAccess({ sysex: false });
+            onMIDISuccess(access); // This will call refreshPortLists, which in turn calls loadPortSelections
+            initMIDIPortControls(); // Attach event listeners now that selectors are populated by refreshPortLists
+        } catch (error) {
+            showNotification('Failed to get MIDI access. Check browser permissions.', 'error', 5000);
+            console.error("MIDI Access Error:", error);
+            alert("Failed to get MIDI access. Please ensure you are using a compatible browser (like Chrome or Edge) and have granted MIDI permissions.");
+        }
+    } else {
+        showNotification('Web MIDI API not supported. Use Chrome or Edge.', 'error', 5000);
+        alert("Web MIDI API not supported in this browser. Please use Chrome or Edge.");
+    }
+
+    // 8. Initialize Database and load song data
+    try {
+        await initDB();
+        setupAutoLoadOnSongChange(); // Listens for hash changes
+        await loadChordsFromDB();    // Initial song load (calls updateStatus)
+    } catch (error) {
+        console.error('Failed to initialize IndexedDB or load initial song:', error);
+        showNotification('Failed to initialize storage system. Saved data may not be available.', 'error');
+    }
+});
+
+</script>
+</body>
+</html>
