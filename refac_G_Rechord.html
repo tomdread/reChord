@@ -1639,10 +1639,7 @@ function createPianoKeyboard() {
             const isBlackKey = noteName.includes('#');
             
             const keyRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            keyRect.dataset.note = note;
-            keyRect.setAttribute('tabindex', '0'); // Make each key focusable
-            keyRect.setAttribute('role', 'button'); // Accessibility
-            keyRect.setAttribute('aria-label', `Piano key ${noteName}`);
+            keyRect.dataset.note = note; 
             pianoKeyElements[pianoId][note] = keyRect;
             
             const keyText = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -1684,114 +1681,6 @@ function createPianoKeyboard() {
         pianoContainer.appendChild(svg);
     });
 }
-
-// --- MIDI handling for piano keys ---
-function getOutputTypeForPianoId(pianoId) {
-    // Map pianoId to outputType for send()
-    if (pianoId === 'main-piano') return 'main';
-    if (pianoId === 'chord-piano') return 'chord';
-    if (pianoId === 'bass-piano') return 'bass';
-    if (pianoId === 'string-piano') return 'string';
-    // 'current-piano' is display only, no output
-    return null;
-}
-
-function sendPianoKeyMIDI(pianoId, note, isNoteOn) {
-    const outputType = getOutputTypeForPianoId(pianoId);
-    if (!outputType) return;
-    const velocity = isNoteOn ? 100 : 0; // Or use a config/default
-    const channel = MIDI_CHANNEL_MAIN; // Use main channel, or customize per section if needed
-    const status = isNoteOn ? MIDI_NOTE_ON : MIDI_NOTE_OFF;
-    send([status, note, velocity], outputType);
-}
-
-// Track state to avoid duplicate note-ons/offs
-const pianoKeyState = {}; // { [pianoId_note]: { isDown: bool, timeoutId: number|null } }
-
-// --- Keyboard navigation for piano keys ---
-function initializePianoKeyboardNavigation() {
-    const pianoIds = ['current-piano', 'main-piano', 'bass-piano', 'chord-piano', 'string-piano'];
-    pianoIds.forEach(pianoId => {
-        const pianoContainer = document.getElementById(pianoId);
-        if (!pianoContainer) return;
-        const svg = pianoContainer.querySelector('svg');
-        if (!svg) return;
-        const keys = Array.from(svg.querySelectorAll('.piano-key'));
-        // Focus management
-        keys.forEach((key, idx) => {
-            const note = parseInt(key.dataset.note, 10);
-            const keyId = `${pianoId}_${note}`;
-            pianoKeyState[keyId] = { isDown: false, timeoutId: null };
-
-            // --- Mouse/touch events ---
-            const handleDown = (e) => {
-                if (pianoKeyState[keyId].isDown) return;
-                pianoKeyState[keyId].isDown = true;
-                sendPianoKeyMIDI(pianoId, note, true);
-            };
-            const handleUp = (e) => {
-                if (!pianoKeyState[keyId].isDown) return;
-                pianoKeyState[keyId].isDown = false;
-                sendPianoKeyMIDI(pianoId, note, false);
-            };
-            key.addEventListener('mousedown', handleDown);
-            key.addEventListener('touchstart', handleDown);
-            // Listen for mouseup/touchend on window to ensure note-off even if mouse leaves key
-            window.addEventListener('mouseup', handleUp);
-            window.addEventListener('touchend', handleUp);
-
-            // --- Keyboard events ---
-            key.addEventListener('keydown', (e) => {
-                let handled = false;
-                let nextIdx = idx;
-                if (e.key === 'ArrowRight') {
-                    nextIdx = (idx + 1) % keys.length;
-                    handled = true;
-                } else if (e.key === 'ArrowLeft') {
-                    nextIdx = (idx - 1 + keys.length) % keys.length;
-                    handled = true;
-                } else if (e.key === 'Home') {
-                    nextIdx = 0;
-                    handled = true;
-                } else if (e.key === 'End') {
-                    nextIdx = keys.length - 1;
-                    handled = true;
-                } else if (e.key === 'Tab') {
-                    // Allow tab to move out of the grid
-                    return;
-                } else if (e.key === 'Enter' || e.key === ' ') {
-                    // Only trigger if not already down
-                    if (!pianoKeyState[keyId].isDown) {
-                        pianoKeyState[keyId].isDown = true;
-                        sendPianoKeyMIDI(pianoId, note, true);
-                        // Schedule note-off after 250ms
-                        if (pianoKeyState[keyId].timeoutId) clearTimeout(pianoKeyState[keyId].timeoutId);
-                        pianoKeyState[keyId].timeoutId = setTimeout(() => {
-                            pianoKeyState[keyId].isDown = false;
-                            sendPianoKeyMIDI(pianoId, note, false);
-                        }, 250);
-                    }
-                    handled = true;
-                }
-                if (handled) {
-                    e.preventDefault();
-                    keys[nextIdx].focus();
-                }
-            });
-        });
-        // Optional: Focus first key on container focus
-        pianoContainer.addEventListener('focus', (e) => {
-            if (e.target === pianoContainer) {
-                const firstKey = keys[0];
-                if (firstKey) firstKey.focus();
-            }
-        });
-        pianoContainer.setAttribute('tabindex', '-1'); // Container can be focused programmatically
-        pianoContainer.setAttribute('role', 'group');
-        pianoContainer.setAttribute('aria-label', `${pianoId.replace('-',' ')} keyboard`);
-    });
-}
-
 function countWhiteKeys(startNote, endNote) {
     let count = 0; 
     for (let note = startNote; note <= endNote; note++) {
@@ -2090,7 +1979,6 @@ document.addEventListener('DOMContentLoaded', () => {
     createPianoSections();
     createPianoKeyboard();
     addSongControls();
-    initializePianoKeyboardNavigation(); // <-- Add keyboard navigation for piano keys
 
     updateStatus(); // Initial UI state before MIDI/DB
 
