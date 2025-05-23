@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MIDI Tester for reChord37</title>
+</head>
+<body>
+  <h1>MIDI Test Script</h1>
+  <label for="output">Select MIDI Output:</label>
+  <select id="output"></select>
+  <button onclick="startTest()">Start Test</button>
+
+  <script>
+    const pads = [36, 37, 38, 39, 40, 41, 42, 43];
+    const chords = [
+      [48, 52, 55, 60, 64, 67],      // C Major
+      [48, 55, 58, 63, 67, 70],      // C Minor 7th
+      [52, 55, 59],                  // E minor
+      [53, 57, 60],                  // F major
+      [55, 59, 62],                  // G major
+      [53, 55, 71],                  // F G B (unknown)
+      [51, 64],                      // D# E
+      [60, 62, 65, 69]               // C D F A (sus?)
+    ];
+
+    let midi, output;
+
+    navigator.requestMIDIAccess().then(onMIDISuccess, err => alert("MIDI failed: " + err));
+
+    function onMIDISuccess(midiAccess) {
+      midi = midiAccess;
+      const outputSelect = document.getElementById("output");
+      for (let out of midi.outputs.values()) {
+        let opt = document.createElement("option");
+        opt.value = out.id;
+        opt.textContent = out.name;
+        outputSelect.appendChild(opt);
+      }
+    }
+
+    function getOutput() {
+      const selectedId = document.getElementById("output").value;
+      output = midi.outputs.get(selectedId);
+      if (!output) alert("Select an output first.");
+      return output;
+    }
+
+    async function startTest() {
+  if (!getOutput()) return;
+
+  console.log("Starting reChord37 MIDI test");
+
+  // ENTER PLAY MODE FIRST — ensures clean transition
+  sendCC(118, 127); // CC118 = PLAY
+  await delay(300);
+
+  // THEN ENTER RECORD MODE
+  sendCC(119, 127); // CC119 = RECORD
+  await delay(300);
+
+  for (let i = 0; i < pads.length; i++) {
+    const chord = chords[i];
+    const padNote = pads[i];
+
+    // Play chord notes
+    for (const note of chord) sendNoteOn(note);
+    await delay(300);
+
+    // Tap pad to store chord
+    sendNoteOn(padNote);
+    await delay(50);
+    sendNoteOff(padNote);
+    await delay(100);
+
+    // Release chord notes
+    for (const note of chord) sendNoteOff(note);
+    await delay(300);
+  }
+
+  // Exit RECORD mode
+  sendCC(119, 0);
+  await delay(300);
+
+  // Enter PLAY mode again
+  sendCC(118, 127);
+  await delay(500);
+
+  // Trigger all pads
+  for (const pad of pads) {
+    sendNoteOn(pad, 100, 10); // Channel 10 (drum)
+    await delay(200);
+    sendNoteOff(pad, 10);
+    await delay(200);
+  }
+
+  // STOP
+  sendCC(117, 127);
+  console.log("Test complete");
+}
+
+    function sendNoteOn(note, velocity = 100, channel = 1) {
+      output.send([0x90 | ((channel - 1) & 0x0F), note, velocity]);
+    }
+
+    function sendNoteOff(note, channel = 1) {
+      output.send([0x80 | ((channel - 1) & 0x0F), note, 0]);
+    }
+
+    function sendCC(controller, value, channel = 1) {
+      output.send([0xB0 | ((channel - 1) & 0x0F), controller, value]);
+    }
+
+    function delay(ms) {
+      return new Promise(res => setTimeout(res, ms));
+    }
+  </script>
+</body>
+</html>

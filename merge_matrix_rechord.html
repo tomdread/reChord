@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>reChord37.com - Combined Matrix & reChord</title>
+    <style>
+        /* ===== COMMON STYLES ===== */
+        :root {
+            /* Common variables */
+            --header-bg: #f2f2f2;
+            --border-color: #ddd;
+            --radius: 4px;
+            --focus-outline-color: #2196F3;
+            --highlight-color: gold;
+            --row-hover-bg: #f5f5f5;
+            
+            /* Matrix specific */
+            --svg-cell-size: 32px;
+            --svg-cell-gap: 5px;
+            --svg-cell-corner-radius: 4px;
+            --connection-on-color: #4CAF50;
+            --connection-off-color: #e0e0e0;
+            --connection-off-stroke: #ccc;
+            --loopback-indicator-color: #ff9800;
+            --max-header-width: 180px;
+            
+            /* reChord specific */
+            --cell-padding: 8px;
+            --highlight: #d1ffd1;
+            --loopback-bg: #ffe6e6;
+        }
+        
+        body {
+            background: #f9f9f9;
+            font-family: 'Courier New', Courier, monospace;
+            color: #222;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.4;
+        }
+        
+        h1, h2, h3 {
+            font-family: 'Courier New', Courier, monospace;
+        }
+        
+        .app-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .app-section {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        /* ===== MATRIX STYLES ===== */
+        #matrix-app h2 {
+            color: #2196F3;
+            margin-top: 0;
+        }
+        
+        .matrix-port-selection {
+            display: flex;
+            gap: 15px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+        
+        .matrix-port-list {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .matrix-port-list h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+        
+        .port-checkbox {
+            margin-right: 8px;
+        }
+        
+        #matrixGridContainer {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        #matrixInputHeaders, #matrixOutputHeaders {
+            display: flex;
+            flex-direction: column;
+            gap: var(--svg-cell-gap);
+        }
+        
+        .matrix-header-item {
+            height: var(--svg-cell-size);
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            font-size: 12px;
+            background: var(--header-bg);
+            border-radius: var(--radius);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: var(--max-header-width);
+        }
+        
+        #matrixSvgContainer {
+            position: relative;
+        }
+        
+        #svgMatrixGrid {
+            background: white;
+            border-radius: var(--radius);
+        }
+        
+        .matrix-svg-cell {
+            fill: var(--connection-off-color);
+            stroke: var(--connection-off-stroke);
+            stroke-width: 1;
+            cursor: pointer;
+            transition: fill 0.2s, filter 0.2s;
+        }
+        
+        .matrix-svg-cell.connected {
+            fill: var(--connection-on-color);
+            stroke: var(--connection-on-color);
+        }
+        
+        .matrix-svg-cell.highlight {
+            filter: brightness(1.2);
+        }
+        
+        .matrix-svg-cell:focus {
+            outline: 2px solid var(--focus-outline-color);
+            outline-offset: 2px;
+        }
+        
+        .loopback-cell-visual {
+            fill: var(--loopback-indicator-color);
+            opacity: 0.3;
+        }
+        
+        /* ===== RECHORD STYLES ===== */
+        #rechord-app h2 {
+            color: #4CAF50;
+            margin-top: 0;
+        }
+        
+        .top-card {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 16px 18px 10px 18px;
+            margin-bottom: 18px;
+        }
+        
+        .piano-section {
+            margin: 15px 0;
+        }
+        
+        .piano-container {
+            position: relative;
+            height: 120px;
+            margin: 20px 0;
+            overflow-x: auto;
+            background: #f5f5f5;
+            border-radius: var(--radius);
+        }
+        
+        .piano-svg {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .piano-white-key {
+            fill: white;
+            stroke: #999;
+            stroke-width: 1;
+        }
+        
+        .piano-black-key {
+            fill: #333;
+            stroke: #000;
+            stroke-width: 1;
+        }
+        
+        .piano-key-text {
+            font-size: 10px;
+            text-anchor: middle;
+            pointer-events: none;
+            user-select: none;
+        }
+        
+        .piano-key.active {
+            fill: var(--highlight);
+        }
+        
+        .controls-row {
+            display: flex;
+            gap: 15px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+        
+        .control-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .control-group h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+        
+        select, input, button {
+            width: 100%;
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 14px;
+        }
+        
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #1976D2;
+        }
+        
+        button.active {
+            background: #4CAF50;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ccc;
+            margin-right: 5px;
+        }
+        
+        .status-indicator.active {
+            background: #4CAF50;
+            box-shadow: 0 0 5px #4CAF50;
+        }
+        
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: var(--radius);
+            color: white;
+            font-weight: bold;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        
+        .notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .notification.success {
+            background: #4CAF50;
+        }
+        
+        .notification.error {
+            background: #F44336;
+        }
+        
+        .notification.info {
+            background: #2196F3;
+        }
+        
+        .notification.warning {
+            background: #FF9800;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .matrix-port-selection, .controls-row {
+                flex-direction: column;
+            }
+            
+            .matrix-port-list, .control-group {
+                width: 100%;
+                min-width: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Matrix Application -->
+        <div id="matrix-app" class="app-section">
+            <h2>MIDI Matrix Router</h2>
+            
+            <div class="matrix-port-selection">
+                <div class="matrix-port-list">
+                    <h4>Input Ports</h4>
+                    <div id="matrixInputPortsList">
+                        <!-- Input ports will be populated by JavaScript -->
+                        <div class="port-loading">Loading MIDI inputs...</div>
+                    </div>
+                    <button id="matrixSelectAllInputs">Select All</button>
+                </div>
+                
+                <div class="matrix-port-list">
+                    <h4>Output Ports</h4>
+                    <div id="matrixOutputPortsList">
+                        <!-- Output ports will be populated by JavaScript -->
+                        <div class="port-loading">Loading MIDI outputs...</div>
+                    </div>
+                    <button id="matrixSelectAllOutputs">Select All</button>
+                </div>
+            </div>
+            
+            <div id="matrixGridContainer">
+                <div id="matrixInputHeaders">
+                    <!-- Input headers will be populated by JavaScript -->
+                </div>
+                
+                <div id="matrixSvgContainer">
+                    <svg id="svgMatrixGrid" width="0" height="0">
+                        <!-- SVG grid will be generated by JavaScript -->
+                    </svg>
+                </div>
+                
+                <div id="matrixOutputHeaders">
+                    <!-- Output headers will be populated by JavaScript -->
+                </div>
+            </div>
+            
+            <div id="matrixActivityIndicators">
+                <!-- Activity indicators will be populated by JavaScript -->
+            </div>
+            
+            <div class="controls-row">
+                <div class="control-group">
+                    <button id="matrixSaveConnections">Save Connections</button>
+                </div>
+                <div class="control-group">
+                    <button id="matrixClearAll">Clear All Connections</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- reChord Application -->
+        <div id="rechord-app" class="app-section">
+            <h2>reChord</h2>
+            
+            <div class="top-card">
+                <h3>Song: <span id="song-name">Untitled</span></h3>
+                <div class="controls-row">
+                    <div class="control-group">
+                        <button id="prev-song">Previous Song</button>
+                    </div>
+                    <div class="control-group">
+                        <button id="next-song">Next Song</button>
+                    </div>
+                    <div class="control-group">
+                        <button id="new-song">New Song</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="piano-section">
+                <h3>Piano Interface</h3>
+                <div class="piano-container">
+                    <svg id="piano-svg" class="piano-svg" viewBox="0 0 1000 200" preserveAspectRatio="none">
+                        <!-- Piano keys will be generated by JavaScript -->
+                    </svg>
+                </div>
+            </div>
+            
+            <div class="controls-row">
+                <div class="control-group">
+                    <h4>Mode</h4>
+                    <button id="stop-btn" class="active">Stop</button>
+                    <button id="record-btn">Record</button>
+                    <button id="play-btn">Play</button>
+                </div>
+                
+                <div class="control-group">
+                    <h4>Inversion</h4>
+                    <div id="inversion-display">0</div>
+                    <button id="inversion-up">Up</button>
+                    <button id="inversion-down">Down</button>
+                </div>
+                
+                <div class="control-group">
+                    <h4>Velocity Tilt</h4>
+                    <div id="tilt-display">0</div>
+                    <button id="tilt-up">+</button>
+                    <button id="tilt-down">-</button>
+                </div>
+            </div>
+            
+            <div class="controls-row">
+                <div class="control-group">
+                    <h4>MIDI Input</h4>
+                    <select id="midi-input-select">
+                        <option value="">Select MIDI Input</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <h4>MIDI Output (Main)</h4>
+                    <select id="midi-output-main-select">
+                        <option value="">Select MIDI Output</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <h4>MIDI Status</h4>
+                    <div>
+                        <span class="status-indicator" id="midi-input-status"></span>
+                        <span id="midi-input-name">No input selected</span>
+                    </div>
+                    <div>
+                        <span class="status-indicator" id="midi-output-status"></span>
+                        <span id="midi-output-name">No output selected</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="controls-row">
+                <div class="control-group">
+                    <h4>Current Chord</h4>
+                    <div id="current-chord">No chord detected</div>
+                </div>
+                
+                <div class="control-group">
+                    <h4>Sequence</h4>
+                    <button id="sequence-mode-btn">Sequence Mode: Off</button>
+                    <div id="sequence-display">No sequence</div>
+                </div>
+            </div>
+            
+            <div class="controls-row">
+                <div class="control-group">
+                    <h4>Notes</h4>
+                    <textarea id="song-notes" placeholder="Add notes about this song..." rows="4"></textarea>
+                    <button id="save-notes">Save Notes</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Notification Container -->
+        <div id="notification-container"></div>
+    </div>
+
+    <script>
+    // ===== GLOBAL VARIABLES =====
+    let midiAccess;
+    let inputs = new Map();
+    let outputs = new Map();
+    let matrixConnections = new Map();
+    let selectedInputs = new Set();
+    let selectedOutputs = new Set();
+    let isDragging = false;
+    let lastCell = null;
+    
+    // reChord specific variables
+    let currentChord = [];
+    let currentScale = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+    let currentKey = 'C';
+    let currentOctave = 4;
+    let activeNotes = new Set();
+    let chordHistory = [];
+    const MAX_HISTORY = 10;
+
+    // ===== INITIALIZATION =====
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            await initializeMIDI();
+            initializeMatrix();
+            initializeRechord();
+        } catch (error) {
+            console.error('Initialization error:', error);
+            alert('Error initializing application: ' + error.message);
+        }
+    });
+
+    // ===== MATRIX ROUTER FUNCTIONS =====
+    async function initializeMIDI() {
+        try {
+            midiAccess = await navigator.requestMIDIAccess();
+            setupMIDIEventListeners();
+            updateMIDIPorts();
+            midiAccess.onstatechange = updateMIDIPorts;
+        } catch (error) {
+            console.error('MIDI initialization error:', error);
+            alert('Error initializing MIDI. Make sure your browser supports WebMIDI.');
+        }
+    }
+    
+    function setupMIDIEventListeners() {
+        inputs.clear();
+        for (let input of midiAccess.inputs.values()) {
+            setupInput(input);
+        }
+        
+        outputs.clear();
+        for (let output of midiAccess.outputs.values()) {
+            outputs.set(output.id, output);
+        }
+    }
+    
+    function setupInput(input) {
+        inputs.set(input.id, input);
+        input.onmidimessage = handleMIDIMessage;
+    }
+    
+    function updateMIDIPorts() {
+        const inputContainer = document.getElementById('matrixInputPortsList');
+        const outputContainer = document.getElementById('matrixOutputPortsList');
+        
+        if (!inputContainer || !outputContainer) {
+            console.error('Required container elements not found');
+            return;
+        }
+        
+        inputContainer.innerHTML = '<div class="port-loading">Loading MIDI inputs...</div>';
+        outputContainer.innerHTML = '<div class="port-loading">Loading MIDI outputs...</div>';
+        
+        // Add input ports
+        midiAccess.inputs.forEach((input) => {
+            const div = document.createElement('div');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `in-${input.id}`;
+            checkbox.checked = selectedInputs.has(input.id);
+            checkbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    selectedInputs.add(input.id);
+                } else {
+                    selectedInputs.delete(input.id);
+                }
+                updateMatrixDisplay();
+            });
+            
+            const label = document.createElement('label');
+            label.htmlFor = `in-${input.id}`;
+            label.textContent = input.name || `Input ${input.id}`;
+            
+            div.appendChild(checkbox);
+            div.appendChild(label);
+            inputContainer.appendChild(div);
+        });
+        
+        // Add output ports
+        midiAccess.outputs.forEach((output) => {
+            const div = document.createElement('div');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `out-${output.id}`;
+            checkbox.checked = selectedOutputs.has(output.id);
+            checkbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    selectedOutputs.add(output.id);
+                } else {
+                    selectedOutputs.delete(output.id);
+                }
+                updateMatrixDisplay();
+            });
+            
+            const label = document.createElement('label');
+            label.htmlFor = `out-${output.id}`;
+            label.textContent = output.name || `Output ${output.id}`;
+            
+            div.appendChild(checkbox);
+            div.appendChild(label);
+            outputContainer.appendChild(div);
+        });
+        
+        updateMatrixDisplay();
+    }
+    
+    function handleMIDIMessage(message) {
+        if (!selectedInputs.has(message.target.id)) return;
+        
+        const [status, note, velocity] = message.data;
+        const command = status & 0xf0;
+        
+        // Route to all selected outputs
+        selectedOutputs.forEach(outputId => {
+            const output = outputs.get(outputId);
+            if (output) {
+                output.send([status, note, velocity]);
+            }
+        });
+        
+        // Update reChord
+        if (command === 0x90 && velocity > 0) {
+            handleNoteOn(note);
+        } else if ((command === 0x80) || (command === 0x90 && velocity === 0)) {
+            handleNoteOff(note);
+        }
+    }
+    
+    function initializeMatrix() {
+        const svg = document.getElementById('svgMatrixGrid');
+        
+        svg.addEventListener('mousedown', (e) => {
+            if (e.target.classList.contains('matrix-svg-cell')) {
+                isDragging = true;
+                toggleCell(e.target);
+            }
+        });
+        
+        svg.addEventListener('mousemove', (e) => {
+            if (isDragging && e.target.classList.contains('matrix-svg-cell')) {
+                const cell = e.target;
+                if (cell !== lastCell) {
+                    toggleCell(cell);
+                    lastCell = cell;
+                }
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            lastCell = null;
+        });
+    }
+    
+    function updateMatrixDisplay() {
+        const svg = document.getElementById('svgMatrixGrid');
+        const inputPorts = Array.from(midiAccess.inputs.values()).filter(input => selectedInputs.has(input.id));
+        const outputPorts = Array.from(midiAccess.outputs.values()).filter(output => selectedOutputs.has(output.id));
+        
+        // Clear and redraw the matrix based on selected ports
+        // Implementation depends on your specific UI requirements
+    }
+    
+    function toggleCell(cell) {
+        const inputId = cell.getAttribute('data-input');
+        const outputId = cell.getAttribute('data-output');
+        const connectionKey = `${inputId}:${outputId}`;
+        
+        const isConnected = matrixConnections.get(connectionKey) || false;
+        matrixConnections.set(connectionKey, !isConnected);
+        
+        cell.classList.toggle('connected');
+    }
+    
+    // ===== RECHORD FUNCTIONS =====
+    function initializeRechord() {
+        try {
+            // Initialize piano keyboard
+            initializePiano();
+            
+            // Set up chord buttons if they exist
+            const chordButtons = document.querySelectorAll('.chord-button');
+            if (chordButtons.length > 0) {
+                chordButtons.forEach(button => {
+                    button.addEventListener('click', () => {
+                        const chordType = button.dataset.chord;
+                        playChord(chordType);
+                    });
+                });
+            }
+            
+            // Set up scale selection if it exists
+            const scaleSelect = document.getElementById('scale-select');
+            if (scaleSelect) {
+                scaleSelect.addEventListener('change', (e) => {
+                    currentScale = getScaleNotes(e.target.value, currentKey);
+                    updatePianoDisplay();
+                });
+            }
+            
+            // Set up key selection if it exists
+            const keySelect = document.getElementById('key-select');
+            if (keySelect) {
+                keySelect.addEventListener('change', (e) => {
+                    currentKey = e.target.value;
+                    const scaleSelect = document.getElementById('scale-select');
+                    if (scaleSelect) {
+                        currentScale = getScaleNotes(scaleSelect.value, currentKey);
+                        updatePianoDisplay();
+                    }
+                });
+            }
+            
+            // Set up octave controls if they exist
+            const octaveUp = document.getElementById('octave-up');
+            const octaveDown = document.getElementById('octave-down');
+            const octaveDisplay = document.getElementById('octave-display');
+            
+            if (octaveUp && octaveDown && octaveDisplay) {
+                octaveUp.addEventListener('click', () => {
+                    if (currentOctave < 7) {
+                        currentOctave++;
+                        octaveDisplay.textContent = currentOctave;
+                        updatePianoDisplay();
+                    }
+                });
+                
+                octaveDown.addEventListener('click', () => {
+                    if (currentOctave > 0) {
+                        currentOctave--;
+                        octaveDisplay.textContent = currentOctave;
+                        updatePianoDisplay();
+                    }
+                });
+            }
+            
+            // Initialize with default scale if select exists
+            if (scaleSelect) {
+                currentScale = getScaleNotes(scaleSelect.value, currentKey);
+                updatePianoDisplay();
+            }
+        } catch (error) {
+            console.error('Error initializing reChord:', error);
+        }
+    }
+    
+    function initializePiano() {
+        try {
+            const pianoContainer = document.getElementById('piano-svg');
+            if (!pianoContainer) {
+                console.warn('Piano container not found');
+                return;
+            }
+            
+            // Initialize piano UI here
+            // This is a placeholder - implement your piano UI logic
+            console.log('Piano initialized');
+        } catch (error) {
+            console.error('Error initializing piano:', error);
+        }
+    }
+    
+    function updatePianoDisplay() {
+        try {
+            const pianoSvg = document.getElementById('piano-svg');
+            if (!pianoSvg) return;
+            
+            // Update piano display based on current scale and key
+            // This is a placeholder - implement your piano display logic
+            console.log('Updating piano display', { scale: currentScale, key: currentKey, octave: currentOctave });
+        } catch (error) {
+            console.error('Error updating piano display:', error);
+        }
+    }
+    
+    function getScaleNotes(scaleType, key) {
+        // Return array of notes in the specified scale and key
+        // Implementation depends on your music theory requirements
+        return [];
+    }
+    
+    function playChord(chordType) {
+        // Play the specified chord type
+        // Implementation depends on your MIDI output requirements
+    }
+    
+    function handleNoteOn(note) {
+        activeNotes.add(note);
+        // Update UI to show active note
+    }
+    
+    function handleNoteOff(note) {
+        activeNotes.delete(note);
+        // Update UI to deactivate note
+    }
+    
+    // Helper function to send MIDI note on message
+    function sendNoteOn(note, velocity = 64) {
+        selectedOutputs.forEach(outputId => {
+            const output = outputs.get(outputId);
+            if (output) {
+                output.send([0x90, note, velocity]);
+            }
+        });
+    }
+    
+    // Helper function to send MIDI note off message
+    function sendNoteOff(note) {
+        selectedOutputs.forEach(outputId => {
+            const output = outputs.get(outputId);
+            if (output) {
+                output.send([0x80, note, 0]);
+            }
+        });
+    }
+    </script>
+</body>
+</html>
