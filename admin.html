@@ -278,6 +278,7 @@
             <input type="text" id="songSearchInput" placeholder="Search song name or ID..." autocomplete="off">
             <div id="songSuggestions"></div>
         </div>
+        <!-- Load button is kept for explicit loading if needed, though search is primary -->
         <button class="info" onclick="loadAndRenderEntry()">Load</button>
         <button onclick="refreshKeys()">🔁 Refresh Keys</button>
         <button class="info" onclick="createNewEntry()">➕ New Entry</button>
@@ -532,7 +533,7 @@
             } catch (error) {
                 showNotification('Auto-save failed: ' + error.message, 'error');
                 console.error('Auto-save error:', error);
-            - }
+            }
         }, 1000); // Debounce by 1 second
 
         // --- Piano Display Functions (adapted from index.html) ---
@@ -897,8 +898,13 @@
         // --- Data Handling Functions ---
         async function loadAndRenderEntry() {
             const storeName = domElements.storeSelect.value;
-            let key = domElements.songSearchInput.value || domElements.keySelect.value; // For ports, use keySelect value
-            if (storeName === 'ports') key = 'current'; // Ports only have one key
+            let key = domElements.songSearchInput.value; // Get key from search input
+
+            // If the store is 'ports', the key is fixed as 'current'
+            if (storeName === 'ports') {
+                key = 'current';
+                domElements.songSearchInput.value = key; // Ensure input shows 'current'
+            }
 
             if (!key) {
                 renderForm(storeName, {}); // Render an empty form if no key is selected
@@ -1028,8 +1034,8 @@
             const storeName = domElements.storeSelect.value;
             domElements.songSuggestions.innerHTML = '';
             domElements.songSearchInput.value = '';
-            domElements.keySelect.innerHTML = ''; // Clear port key select
-            domElements.keySelect.style.display = 'none'; // Hide by default
+            // domElements.keySelect is not used for song keys, only for ports now, and is hidden.
+            // If it were visible for some reason, ensure it's cleared: domElements.keySelect.innerHTML = '';
 
             if (storeName === 'songs') {
                 domElements.songSearchInput.style.display = 'inline-block';
@@ -1037,12 +1043,7 @@
                 filterAndDisplaySuggestions(); // Populate initial suggestions
             } else { // ports store
                 domElements.songSearchInput.style.display = 'none';
-                domElements.keySelect.style.display = 'inline-block';
-                const opt = document.createElement('option');
-                opt.value = 'current';
-                opt.textContent = 'current';
-                domElements.keySelect.appendChild(opt);
-                domElements.keySelect.value = 'current';
+                // For 'ports', ensure currentLoadedKey is set and explicitly load it
                 currentLoadedKey = 'current';
                 await loadAndRenderEntry(); // Load the 'current' port config
             }
@@ -1184,7 +1185,7 @@
             domElements.songSuggestions.innerHTML = '';
             activeSuggestionIndex = -1;
 
-            if (query.length < 2) { // Show all if query is short
+            if (query.length < 2 && query.length !== 0) { // If 0 characters, or 1, don't display suggestions
                 domElements.songSuggestions.style.display = 'none';
                 return;
             }
