@@ -1,3 +1,5 @@
+/* style.css */
+
 :root {
     --cell-padding: 8px;
     --header-bg: #f2f2f2;
@@ -32,6 +34,7 @@
     border-radius: var(--radius);
     font-family: monospace;
     transition: all 0.2s ease;
+    text-align: center; /* Added for better layout */
 }
 
 .pad-chord.active {
@@ -53,6 +56,7 @@
 .pad-chord .chord-notes {
     font-size: 0.8em;
     color: #888;
+    word-wrap: break-word; /* Ensure notes wrap if too many */
 }
 
 body {
