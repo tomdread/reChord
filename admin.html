@@ -1,153 +1,617 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <title>reChord IndexedDB Admin</title>
-  <style>
-    body { font-family: monospace; padding: 1rem; background: #f9f9f9; color: #111; }
-    h1 { font-size: 1.4em; margin-bottom: 0.2em; }
-    select, textarea, button {
-      font-family: monospace;
-      margin: 0.3em;
-      padding: 0.4em;
-      font-size: 1em;
-    }
-    textarea { width: 100%; height: 300px; }
-    .controls { margin-bottom: 1em; }
-    .danger { background: #c00; color: #fff; }
-    .info { background: #0077cc; color: #fff; }
-    .section { border: 1px solid #ccc; padding: 1em; margin-top: 1em; background: #fff; }
-  </style>
+    <meta charset="UTF-8" />
+    <title>reChord IndexedDB Admin</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 1.5rem; background: #f0f2f5; color: #333; line-height: 1.6; }
+        h1 { font-size: 1.8em; margin-bottom: 0.5em; color: #2c3e50; }
+        h2 { font-size: 1.3em; margin-top: 1.5em; margin-bottom: 0.8em; color: #34495e; }
+        select, input[type="text"], input[type="number"], textarea, button {
+            font-family: inherit;
+            margin: 0.3em 0.5em 0.3em 0;
+            padding: 0.6em 1em;
+            font-size: 0.95em;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            vertical-align: middle;
+        }
+        select {
+            padding-right: 2em; /* Ensure dropdown arrow fits */
+        }
+        button {
+            cursor: pointer;
+            background: #007bff;
+            color: #fff;
+            border: none;
+            transition: background-color 0.2s ease;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        button.info { background: #17a2b8; }
+        button.info:hover { background: #138496; }
+
+        textarea {
+            width: 100%;
+            height: 200px; /* Adjusted height */
+            resize: vertical;
+            padding: 0.8em;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 0.5em;
+        }
+        .controls {
+            margin-bottom: 1.5em;
+            background: #ffffff;
+            padding: 1em;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .controls label {
+            margin-right: 1em;
+            font-weight: bold;
+            color: #555;
+            white-space: nowrap;
+        }
+        .section {
+            border: 1px solid #e0e0e0;
+            padding: 1.5em;
+            margin-top: 1.5em;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .form-group {
+            margin-bottom: 1em;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.4em;
+            font-weight: bold;
+            color: #555;
+        }
+        .form-group input[type="text"],
+        .form-group input[type="number"] {
+            width: calc(100% - 2em); /* Adjust for padding */
+            padding: 0.8em;
+        }
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1em;
+            margin-bottom: 1em;
+        }
+        .form-row .form-group {
+            flex: 1;
+            min-width: 250px; /* Ensure fields don't get too narrow */
+        }
+        .json-editor-container {
+            margin-top: 1em;
+        }
+        .json-editor-container button {
+            margin-left: 0;
+            margin-right: 0.5em;
+        }
+        .file-upload-label {
+            display: inline-block;
+            background: #28a745;
+            color: #fff;
+            padding: 0.6em 1em;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            white-space: nowrap;
+            margin-left: 0.5em; /* Adjusted margin for better spacing */
+        }
+        .file-upload-label:hover {
+            background: #218838;
+        }
+        input[type="file"] {
+            display: none; /* Hide default file input */
+        }
+        .key-input {
+            width: 150px; /* Adjust width for key input */
+        }
+    </style>
 </head>
 <body>
-  <h1>🎛 reChord IndexedDB Admin</h1>
+    <h1>🎛 reChord IndexedDB Admin</h1>
 
-  <div class="controls">
-    <label>Store:
-      <select id="storeSelect">
-        <option value="songs">songs</option>
-        <option value="ports">ports</option>
-      </select>
-    </label>
-    <label>Key:
-      <select id="keySelect"></select>
-    </label>
-    <button class="info" onclick="loadEntry()">Load</button>
-    <button onclick="refreshKeys()">🔁 Refresh Keys</button>
-  </div>
-
-  <div class="section">
-    <textarea id="jsonEditor" placeholder="JSON view of data"></textarea>
     <div class="controls">
-      <button onclick="saveEntry()">💾 Save</button>
-      <button class="danger" onclick="deleteEntry()">🗑 Delete</button>
-      <button onclick="downloadJSON()">⬇ Export JSON</button>
-      <input type="file" id="jsonFile" accept=".json" onchange="importJSON(event)">
-      <label for="jsonFile" class="info" style="cursor: pointer;">⬆ Import JSON</label>
+        <label>Store:
+            <select id="storeSelect">
+                <option value="songs">songs</option>
+                <option value="ports">ports</option>
+            </select>
+        </label>
+        <label>Key:
+            <select id="keySelect" class="key-input"></select>
+        </label>
+        <button class="info" onclick="loadAndRenderEntry()">Load</button>
+        <button onclick="refreshKeys()">🔁 Refresh Keys</button>
+        <button class="info" onclick="createNewEntry()">➕ New Entry</button>
     </div>
-  </div>
 
-  <script>
-    const DB_NAME = 'ChordDB';
-    const DB_VERSION = 2;
-    let db;
+    <div class="section">
+        <h2>Data Editor</h2>
+        <div id="dataEntryForm">
+            <p>Select a store and key, or click "New Entry" to begin editing.</p>
+        </div>
+        <div class="controls" style="margin-top: 1.5em; border: none; box-shadow: none; padding: 0;">
+            <button onclick="collectAndSaveEntry()">💾 Save</button>
+            <button class="danger" onclick="deleteEntry()">🗑 Delete</button>
+        </div>
+    </div>
 
-    async function initDB() {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-        request.onsuccess = () => {
-          db = request.result;
-          resolve();
-        };
-        request.onerror = () => reject(request.error);
-        request.onupgradeneeded = (e) => {
-          const upgradeDb = e.target.result;
-          if (!upgradeDb.objectStoreNames.contains('songs')) upgradeDb.createObjectStore('songs');
-          if (!upgradeDb.objectStoreNames.contains('ports')) upgradeDb.createObjectStore('ports');
-        };
-      });
-    }
+    <div class="section">
+        <h2>Raw JSON Import/Export (Advanced)</h2>
+        <textarea id="jsonEditor" placeholder="JSON view of data (for import/export)"></textarea>
+        <div class="controls" style="margin-top: 1em; border: none; box-shadow: none; padding: 0;">
+            <button onclick="downloadJSON()">⬇ Export JSON</button>
+            <input type="file" id="jsonFile" accept=".json" onchange="importJSON(event)">
+            <label for="jsonFile" class="file-upload-label">⬆ Import JSON</label>
+        </div>
+    </div>
 
-    function refreshKeys() {
-      const storeName = document.getElementById('storeSelect').value;
-      const keySelect = document.getElementById('keySelect');
-      keySelect.innerHTML = '';
+    <script>
+        const DB_NAME = 'ChordDB';
+        const DB_VERSION = 2;
+        let db;
+        let currentLoadedKey = null; // To keep track of the currently loaded key
 
-      const tx = db.transaction(storeName, 'readonly');
-      const store = tx.objectStore(storeName);
-      const req = store.getAllKeys();
-      req.onsuccess = () => {
-        req.result.forEach(k => {
-          const opt = document.createElement('option');
-          opt.value = k;
-          opt.textContent = k;
-          keySelect.appendChild(opt);
+        async function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onsuccess = () => {
+                    db = request.result;
+                    resolve();
+                };
+                request.onerror = () => reject(request.error);
+                request.onupgradeneeded = (e) => {
+                    const upgradeDb = e.target.result;
+                    if (!upgradeDb.objectStoreNames.contains('songs')) upgradeDb.createObjectStore('songs');
+                    if (!upgradeDb.objectStoreNames.contains('ports')) upgradeDb.createObjectStore('ports');
+                };
+            });
+        }
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // --- UI Rendering Functions ---
+        function renderForm(storeName, data = {}) {
+            const formContainer = document.getElementById('dataEntryForm');
+            formContainer.innerHTML = ''; // Clear previous form
+
+            let formHtml = '';
+
+            if (storeName === 'songs') {
+                const songId = data.id || generateUUID();
+                formHtml = `
+                    <h2>Song Details</h2>
+                    <div class="form-group">
+                        <label for="songId">Song ID (Key):</label>
+                        <input type="text" id="songId" value="${songId}" readonly title="Song ID is generated automatically and cannot be changed." />
+                    </div>
+                    <div class="form-group">
+                        <label for="songName">Song Name:</label>
+                        <input type="text" id="songName" value="${data.name || ''}" placeholder="Enter song name" />
+                    </div>
+                    <div class="form-group json-editor-container">
+                        <label for="songSequence">Sequence JSON:</label>
+                        <textarea id="songSequence" placeholder="Enter sequence as JSON array (e.g., [[60,64,67], 'pad1'])">${JSON.stringify(data.sequence || [], null, 2)}</textarea>
+                        <button onclick="formatAndValidateJsonField('songSequence')">Format & Validate</button>
+                    </div>
+                    <div class="form-group json-editor-container">
+                        <label for="songPads">Pads JSON:</label>
+                        <textarea id="songPads" placeholder="Enter pads as JSON object (e.g., {'pad1': {chord: [60,64,67], bass: [36]}})">${JSON.stringify(data.pads || {}, null, 2)}</textarea>
+                        <button onclick="formatAndValidateJsonField('songPads')">Format & Validate</button>
+                    </div>
+                `;
+            } else if (storeName === 'ports') {
+                const portData = data.midiConfig || {
+                    inputName: "",
+                    outputNames: { main: "", bass: "", chord: "", string: "" },
+                    channels: { input: 0, main: 0, bass: 0, chord: 0, string: 0 }
+                };
+
+                formHtml = `
+                    <h2>MIDI Port Configuration</h2>
+                    <div class="form-group">
+                        <label for="portInputName">Input Port Name:</label>
+                        <input type="text" id="portInputName" value="${portData.inputName || ''}" placeholder="e.g., MPK mini Plus Port 1" />
+                    </div>
+                    <h3>Output Ports:</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="portOutputMain">Main Output Name:</label>
+                            <input type="text" id="portOutputMain" value="${portData.outputNames.main || ''}" placeholder="e.g., IAC Driver miDiai00" />
+                        </div>
+                        <div class="form-group">
+                            <label for="portOutputBass">Bass Output Name:</label>
+                            <input type="text" id="portOutputBass" value="${portData.outputNames.bass || ''}" placeholder="e.g., IAC Driver miDiai02" />
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="portOutputChord">Chord Output Name:</label>
+                            <input type="text" id="portOutputChord" value="${portData.outputNames.chord || ''}" placeholder="e.g., IAC Driver miDiai01" />
+                        </div>
+                        <div class="form-group">
+                            <label for="portOutputString">String Output Name:</label>
+                            <input type="text" id="portOutputString" value="${portData.outputNames.string || ''}" placeholder="e.g., IAC Driver miDiai03" />
+                        </div>
+                    </div>
+                    <h3>Channels (0 for all, 1-16):</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="channelInput">Input Channel:</label>
+                            <input type="number" id="channelInput" value="${portData.channels.input || 0}" min="0" max="16" />
+                        </div>
+                        <div class="form-group">
+                            <label for="channelMain">Main Channel:</label>
+                            <input type="number" id="channelMain" value="${portData.channels.main || 0}" min="0" max="16" />
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="channelBass">Bass Channel:</label>
+                            <input type="number" id="channelBass" value="${portData.channels.bass || 0}" min="0" max="16" />
+                        </div>
+                        <div class="form-group">
+                            <label for="channelChord">Chord Channel:</label>
+                            <input type="number" id="channelChord" value="${portData.channels.chord || 0}" min="0" max="16" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="channelString">String Channel:</label>
+                        <input type="number" id="channelString" value="${portData.channels.string || 0}" min="0" max="16" />
+                    </div>
+                `;
+            }
+            formContainer.innerHTML = formHtml;
+
+            // Also update the raw JSON editor
+            document.getElementById('jsonEditor').value = JSON.stringify(data, null, 2);
+        }
+
+        function formatAndValidateJsonField(elementId) {
+            const textarea = document.getElementById(elementId);
+            try {
+                const parsed = JSON.parse(textarea.value);
+                textarea.value = JSON.stringify(parsed, null, 2);
+                alert('JSON is valid and formatted!');
+            } catch (e) {
+                alert('Invalid JSON: ' + e.message);
+            }
+        }
+
+        // --- Data Handling Functions ---
+        async function loadAndRenderEntry() {
+            const storeName = document.getElementById('storeSelect').value;
+            const key = document.getElementById('keySelect').value;
+            currentLoadedKey = key; // Set the current loaded key
+
+            if (!key) {
+                renderForm(storeName, {}); // Render an empty form if no key is selected
+                return;
+            }
+
+            try {
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const data = await new Promise((resolve, reject) => {
+                    const req = store.get(key);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+
+                if (data) {
+                    renderForm(storeName, data);
+                } else {
+                    alert(`No data found for key "${key}" in store "${storeName}".`);
+                    renderForm(storeName, {}); // Render empty form
+                }
+            } catch (error) {
+                alert('Error loading entry: ' + error.message);
+                console.error('Error loading entry:', error);
+            }
+        }
+
+        function collectFormData(storeName) {
+            let data = {};
+            let key = null;
+
+            if (storeName === 'songs') {
+                key = document.getElementById('songId').value;
+                data = {
+                    id: key,
+                    name: document.getElementById('songName').value,
+                };
+                try {
+                    data.sequence = JSON.parse(document.getElementById('songSequence').value);
+                } catch (e) {
+                    alert('Invalid JSON in Sequence field: ' + e.message);
+                    throw e; // Stop save if JSON is invalid
+                }
+                try {
+                    data.pads = JSON.parse(document.getElementById('songPads').value);
+                } catch (e) {
+                    alert('Invalid JSON in Pads field: ' + e.message);
+                    throw e; // Stop save if JSON is invalid
+                }
+            } else if (storeName === 'ports') {
+                key = 'midi_config'; // Ports store typically has a single fixed key
+                data = {
+                    midiConfig: {
+                        inputName: document.getElementById('portInputName').value,
+                        outputNames: {
+                            main: document.getElementById('portOutputMain').value,
+                            bass: document.getElementById('portOutputBass').value,
+                            chord: document.getElementById('portOutputChord').value,
+                            string: document.getElementById('portOutputString').value,
+                        },
+                        channels: {
+                            input: parseInt(document.getElementById('channelInput').value, 10),
+                            main: parseInt(document.getElementById('channelMain').value, 10),
+                            bass: parseInt(document.getElementById('channelBass').value, 10),
+                            chord: parseInt(document.getElementById('channelChord').value, 10),
+                            string: parseInt(document.getElementById('channelString').value, 10),
+                        }
+                    }
+                };
+            }
+            return { data, key };
+        }
+
+        async function collectAndSaveEntry() {
+            const storeName = document.getElementById('storeSelect').value;
+            try {
+                const { data, key } = collectFormData(storeName);
+                if (!key) {
+                    alert('Cannot save: A key must be specified for the entry.');
+                    return;
+                }
+                await saveEntry(data, key);
+                alert('✅ Saved successfully!');
+                // After saving, refresh keys and select the saved key
+                await refreshKeys();
+                document.getElementById('keySelect').value = key;
+                await loadAndRenderEntry(); // Reload to ensure display is consistent
+            } catch (error) {
+                alert('❌ Failed to save entry: ' + error.message);
+                console.error('Save error:', error);
+            }
+        }
+
+        // Modified saveEntry to accept data and key directly
+        async function saveEntry(data, key) {
+            const storeName = document.getElementById('storeSelect').value;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const request = store.put(data, key);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function deleteEntry() {
+            const storeName = document.getElementById('storeSelect').value;
+            const key = document.getElementById('keySelect').value;
+            if (!key) {
+                alert('No entry selected to delete.');
+                return;
+            }
+            if (!confirm(`Delete key "${key}" from ${storeName}?`)) return;
+
+            try {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                await new Promise((resolve, reject) => {
+                    const req = store.delete(key);
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => reject(req.error);
+                });
+                alert('🗑 Deleted');
+                await refreshKeys();
+                renderForm(storeName, {}); // Clear form after deletion
+            } catch (error) {
+                alert('❌ Failed to delete entry: ' + error.message);
+                console.error('Delete error:', error);
+            }
+        }
+
+        async function refreshKeys() {
+            const storeName = document.getElementById('storeSelect').value;
+            const keySelect = document.getElementById('keySelect');
+            keySelect.innerHTML = ''; // Clear existing options
+
+            try {
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const keys = await new Promise((resolve, reject) => {
+                    const req = store.getAllKeys();
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+
+                if (keys.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'No entries';
+                    keySelect.appendChild(opt);
+                    currentLoadedKey = null;
+                    renderForm(storeName, {}); // Render empty form when no keys
+                } else {
+                    keys.forEach(k => {
+                        const opt = document.createElement('option');
+                        opt.value = k;
+                        opt.textContent = k;
+                        keySelect.appendChild(opt);
+                    });
+                    // Automatically select the first key or the previously loaded one
+                    if (currentLoadedKey && keys.includes(currentLoadedKey)) {
+                        keySelect.value = currentLoadedKey;
+                    } else {
+                        keySelect.value = keys[0]; // Select the first key
+                        currentLoadedKey = keys[0];
+                    }
+                    await loadAndRenderEntry(); // Load data for the selected key
+                }
+            } catch (error) {
+                alert('Error refreshing keys: ' + error.message);
+                console.error('Error refreshing keys:', error);
+            }
+        }
+
+        function createNewEntry() {
+            const storeName = document.getElementById('storeSelect').value;
+            let newKey;
+            let defaultData = {};
+
+            if (storeName === 'songs') {
+                newKey = generateUUID();
+                defaultData = {
+                    id: newKey,
+                    name: `New Song ${new Date().toLocaleDateString()}`,
+                    sequence: [],
+                    pads: {}
+                };
+            } else if (storeName === 'ports') {
+                newKey = 'midi_config'; // Fixed key for ports
+                defaultData = {
+                    midiConfig: {
+                        inputName: "Default Input",
+                        outputNames: { main: "Default Main", bass: "Default Bass", chord: "Default Chord", string: "Default String" },
+                        channels: { input: 0, main: 0, bass: 0, chord: 0, string: 0 }
+                    }
+                };
+            }
+
+            renderForm(storeName, defaultData);
+            currentLoadedKey = newKey; // Set the current loaded key
+            // Add or select the new key in the dropdown, if applicable
+            const keySelect = document.getElementById('keySelect');
+            if (storeName === 'songs') { // For songs, keys are dynamic UUIDs
+                const opt = document.createElement('option');
+                opt.value = newKey;
+                opt.textContent = `(New) ${defaultData.name || newKey.substring(0, 8)}`;
+                keySelect.appendChild(opt);
+            }
+            keySelect.value = newKey; // Select the new key in the dropdown
+        }
+
+
+        // --- Raw JSON Import/Export Functions ---
+        function downloadJSON() {
+            const json = document.getElementById('jsonEditor').value;
+            if (!json) {
+                alert('No data to export. Load or create an entry first.');
+                return;
+            }
+            const blob = new Blob([json], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            const key = document.getElementById('keySelect').value || 'exported_data';
+            const storeName = document.getElementById('storeSelect').value;
+            a.download = `${storeName}_${key}.json`;
+            a.click();
+            URL.revokeObjectURL(a.href); // Clean up
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async e => {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    document.getElementById('jsonEditor').value = JSON.stringify(importedData, null, 2); // Show in raw editor
+
+                    const storeName = document.getElementById('storeSelect').value;
+                    let keyToSave;
+
+                    if (storeName === 'songs') {
+                        if (!importedData.id) {
+                            alert('Imported song JSON must have an "id" field.');
+                            return;
+                        }
+                        keyToSave = importedData.id;
+                    } else if (storeName === 'ports') {
+                        keyToSave = 'midi_config'; // Fixed key for ports
+                        if (!importedData.midiConfig) {
+                            alert('Imported ports JSON must have a "midiConfig" field.');
+                            return;
+                        }
+                    } else {
+                        alert('Unknown store type for import.');
+                        return;
+                    }
+
+                    // Ask user if they want to load into form or directly save
+                    const confirmLoad = confirm('Imported JSON is loaded into the raw editor. Do you want to load it into the form editor for review/modification (OK) or save it directly to the database (Cancel)?');
+
+                    if (confirmLoad) {
+                        currentLoadedKey = keyToSave;
+                        renderForm(storeName, importedData);
+                        // Update keySelect to show the imported key, if it's a song
+                        if (storeName === 'songs') {
+                            const keySelect = document.getElementById('keySelect');
+                            if (!Array.from(keySelect.options).some(opt => opt.value === keyToSave)) {
+                                const opt = document.createElement('option');
+                                opt.value = keyToSave;
+                                opt.textContent = importedData.name || keyToSave;
+                                keySelect.appendChild(opt);
+                            }
+                            keySelect.value = keyToSave;
+                        }
+                    } else {
+                        // Directly save from imported JSON
+                        await saveEntry(importedData, keyToSave);
+                        alert('✅ JSON imported and saved directly!');
+                        await refreshKeys(); // Update dropdown and form
+                    }
+
+                } catch (error) {
+                    alert('Failed to import JSON: ' + error.message);
+                    console.error('JSON import error:', error);
+                } finally {
+                    event.target.value = ''; // Clear file input
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // --- Event Listeners and Initialization ---
+        document.getElementById('storeSelect').addEventListener('change', async () => {
+            currentLoadedKey = null; // Reset loaded key on store change
+            await refreshKeys();
         });
-      };
-    }
 
-    function loadEntry() {
-      const storeName = document.getElementById('storeSelect').value;
-      const key = document.getElementById('keySelect').value;
-      const tx = db.transaction(storeName, 'readonly');
-      const store = tx.objectStore(storeName);
-      const req = store.get(key);
-      req.onsuccess = () => {
-        document.getElementById('jsonEditor').value = JSON.stringify(req.result, null, 2);
-      };
-    }
+        document.getElementById('keySelect').addEventListener('change', loadAndRenderEntry);
 
-    function saveEntry() {
-      const storeName = document.getElementById('storeSelect').value;
-      const key = document.getElementById('keySelect').value;
-      const data = JSON.parse(document.getElementById('jsonEditor').value);
-      const tx = db.transaction(storeName, 'readwrite');
-      const store = tx.objectStore(storeName);
-      store.put(data, key).onsuccess = () => alert('✅ Saved');
-    }
-
-    function deleteEntry() {
-      const storeName = document.getElementById('storeSelect').value;
-      const key = document.getElementById('keySelect').value;
-      if (!confirm(`Delete key "${key}" from ${storeName}?`)) return;
-      const tx = db.transaction(storeName, 'readwrite');
-      const store = tx.objectStore(storeName);
-      store.delete(key).onsuccess = () => {
-        alert('🗑 Deleted');
-        refreshKeys();
-        document.getElementById('jsonEditor').value = '';
-      };
-    }
-
-    function downloadJSON() {
-      const json = document.getElementById('jsonEditor').value;
-      const blob = new Blob([json], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${document.getElementById('keySelect').value || 'export'}.json`;
-      a.click();
-    }
-
-    function importJSON(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = e => {
-        document.getElementById('jsonEditor').value = e.target.result;
-      };
-      reader.readAsText(file);
-    }
-
-    document.getElementById('storeSelect').addEventListener('change', refreshKeys);
-
-    window.addEventListener('DOMContentLoaded', async () => {
-      try {
-        await initDB();
-        refreshKeys();
-      } catch (err) {
-        alert('❌ Failed to open DB: ' + err);
-      }
-    });
-  </script>
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await initDB();
+                await refreshKeys(); // Initial load of keys and form
+            } catch (err) {
+                alert('❌ Failed to open IndexedDB. Please ensure your browser supports it and it is not blocked: ' + err.message);
+                console.error('IndexedDB init error:', err);
+            }
+        });
+    </script>
 </body>
 </html>
