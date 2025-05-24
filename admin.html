@@ -443,7 +443,7 @@
             adminPianoChordNameDisplay: null,
             applyPadNumberInput: null,
             applySequenceIndexInput: null,
-            songNotesTextarea: null,
+            songNotesTextarea: null, // Will be cached dynamically
             notificationArea: null,
             saveIndicator: null,
         };
@@ -464,8 +464,8 @@
             domElements.notificationArea = document.getElementById('notification-area');
             domElements.saveIndicator = document.getElementById('saveIndicator');
 
-            // Notes textarea will be created dynamically when a song is loaded/created
-            // domElements.songNotesTextarea = document.getElementById('songNotes');
+            // songNotesTextarea is created dynamically within renderForm, so it's not cached here initially.
+            // It will be assigned *inside* renderForm after its creation.
         }
 
         async function initDB() {
@@ -798,16 +798,35 @@
                 domElements.dataEntryForm.innerHTML = formHtml;
                 domElements.adminPianoSection.style.display = 'block'; // Show piano for songs
 
-                // Cache the notes textarea and attach auto-save
-                domElements.songNotesTextarea = document.getElementById('songNotes');
-                if (domElements.songNotesTextarea) {
-                    domElements.songNotesTextarea.addEventListener('input', debouncedSaveEntry);
-                }
+                // DEFERRED ELEMENT ACCESS AND EVENT LISTENER ATTACHMENT
+                // Using setTimeout(0) to ensure the DOM has fully updated after innerHTML.
+                setTimeout(() => {
+                    // Cache the notes textarea and attach auto-save
+                    domElements.songNotesTextarea = document.getElementById('songNotes');
+                    if (domElements.songNotesTextarea) {
+                        domElements.songNotesTextarea.addEventListener('input', debouncedSaveEntry);
+                    } else {
+                        console.error("Failed to find 'songNotes' textarea after innerHTML update.");
+                        showNotification("Failed to load song notes editor. Please refresh.", "error");
+                    }
 
-                // Attach auto-save to JSON textareas
-                document.getElementById('songSequence').addEventListener('input', debouncedSaveEntry);
-                document.getElementById('songPads').addEventListener('input', debouncedSaveEntry);
+                    // Attach auto-save to JSON textareas
+                    const songSequenceTextarea = document.getElementById('songSequence');
+                    if (songSequenceTextarea) {
+                        songSequenceTextarea.addEventListener('input', debouncedSaveEntry);
+                    } else {
+                        console.error("Failed to find 'songSequence' textarea after innerHTML update.");
+                        showNotification("Failed to load sequence editor. Please refresh.", "error");
+                    }
 
+                    const songPadsTextarea = document.getElementById('songPads');
+                    if (songPadsTextarea) {
+                        songPadsTextarea.addEventListener('input', debouncedSaveEntry);
+                    } else {
+                        console.error("Failed to find 'songPads' textarea after innerHTML update.");
+                        showNotification("Failed to load pads editor. Please refresh.", "error");
+                    }
+                }, 0); // Defer to next event loop cycle
 
                 loadPianoWithNotes([]); // Clear admin piano for new load
             } else if (storeName === 'ports') {
@@ -877,9 +896,11 @@
                 domElements.dataEntryForm.innerHTML = formHtml;
 
                 // Attach auto-save to port config fields
-                document.querySelectorAll('#dataEntryForm input').forEach(input => {
-                    input.addEventListener('input', debouncedSaveEntry);
-                });
+                setTimeout(() => {
+                    document.querySelectorAll('#dataEntryForm input').forEach(input => {
+                        input.addEventListener('input', debouncedSaveEntry);
+                    });
+                }, 0);
             }
             domElements.jsonEditor.value = JSON.stringify(data, null, 2);
         }
