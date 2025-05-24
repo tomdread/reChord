@@ -1,0 +1,351 @@
+🎛️ Recommended Mode Matrix
+
+We’ll define a primary mode (STOP, RECORD, PLAY) and overlay substates or flags that modify behavior within that mode.
+
+⸻
+
+🧩 Primary Modes (Mutually Exclusive)
+
+Name	Const	Description
+STOP	MODE_STOP	All engines off, allows safe navigation
+RECORD	MODE_RECORD	Capture chords or sequence steps
+PLAY	MODE_PLAY	Trigger chords, play pads or sequences
+
+
+⸻
+
+🔄 Overlay States (Booleans or Flags)
+
+Flag	Description
+isRecordingSequence	Active if holding RECORD long enough to start step-based input
+isSequenceMode	Active if user toggled into sequence playback
+isPadTriggerMode	Pads act as live trigger surfaces
+isArmingSave	RECORD tap → then wait for pad selection to store chord
+
+
+⸻
+
+🔂 Proposed State Machine (Mode Matrix)
+
+Here’s a simplified version of the Mode + Overlay State Matrix with behavior by button press:
+
+Mode	Flag(s)	REC Button	PLAY Button	STOP Button	PREV/NEXT
+STOP	none	Enter RECORD (short tap)	Enter PLAY	Already in STOP	Load prev/next song
+RECORD	none	Arm SAVE or sequence	-	Back to STOP	Navigate sequence steps
+RECORD	isRecordingSequence	Finalize on REC release	-	Cancel seq recording	Step through sequence
+RECORD	isArmingSave	Save to pad on release	-	Cancel arming	-
+PLAY	none	Enter RECORD	Already in PLAY	Enter STOP	Navigate sequence / pads
+PLAY	isSequenceMode	Enter RECORD	Play chord step	Exit sequence mode	Step through sequence
+PLAY	isPadTriggerMode	Trigger stored pads	-	Disable trigger mode	-
+
+
+⸻
+
+🧠 Suggested Implementation Structure
+
+const MODE_STOP = 0;
+const MODE_RECORD = 1;
+const MODE_PLAY = 2;
+
+let mode = MODE_STOP;
+let flags = {
+  isRecordingSequence: false,
+  isSequenceMode: false,
+  isPadTriggerMode: false,
+  isArmingSave: false
+};
+
+function transitionTo(newMode) {
+  mode = newMode;
+  flags = {
+    isRecordingSequence: false,
+    isSequenceMode: false,
+    isPadTriggerMode: false,
+    isArmingSave: false
+  };
+  updateStatus();
+}
+
+function setFlag(flag, value = true) {
+  flags[flag] = value;
+  updateStatus();
+}
+
+Then, in your buttonManager.registerButton handlers:
+
+onPress: () => {
+  if (mode === MODE_STOP) transitionTo(MODE_RECORD);
+  else if (mode === MODE_PLAY) setFlag('isPadTriggerMode', !flags.isPadTriggerMode);
+}
+
+
+⸻
+
+🧭 Benefits
+	•	✅ Clear transition flow between states
+	•	✅ Easier to debug and extend
+	•	✅ You can eventually visualize this graphically
+	•	✅ Enables future modes like EDIT, BROWSER, or PERFORM
+
+⸻
+
+Would you like a full JS object map (stateMatrix) that formalizes transitions and actions, or a diagram of the states and transitions as SVG/Graphviz/ASCII?
+
+
+Great! Here’s a complete JavaScript object-based stateMatrix, followed by a detailed ASCII diagram representing the flow of modes and transitions in your reChord37.com app.
+
+⸻
+
+🧠 JavaScript stateMatrix
+
+const MODES = {
+  STOP: 'STOP',
+  RECORD: 'RECORD',
+  PLAY: 'PLAY'
+};
+
+const FLAGS = {
+  NONE: 'NONE',
+  RECORD_SEQ: 'RECORD_SEQ',
+  ARM_SAVE: 'ARM_SAVE',
+  SEQ_MODE: 'SEQ_MODE',
+  PAD_TRIGGER: 'PAD_TRIGGER'
+};
+
+// State matrix of possible transitions by button
+const stateMatrix = {
+  [MODES.STOP]: {
+    REC:    { nextMode: MODES.RECORD, setFlag: FLAGS.NONE, note: 'Enter RECORD mode' },
+    PLAY:   { nextMode: MODES.PLAY,   setFlag: FLAGS.PAD_TRIGGER, note: 'Enter PLAY w/ pad trigger' },
+    STOP:   { nextMode: MODES.STOP,   setFlag: FLAGS.NONE, note: 'Stay in STOP' },
+    PREV:   { action: 'loadPrevSong', note: 'Browse previous song' },
+    NEXT:   { action: 'loadNextSong', note: 'Browse next song' }
+  },
+  [MODES.RECORD]: {
+    REC_TAP:   { setFlag: FLAGS.ARM_SAVE, note: 'Arm chord for pad save' },
+    REC_HOLD:  { setFlag: FLAGS.RECORD_SEQ, note: 'Start sequence recording' },
+    REC_REL:   { action: 'saveOrFinalize', note: 'Save to pad or finalize seq' },
+    STOP:      { nextMode: MODES.STOP, setFlag: FLAGS.NONE, note: 'Return to STOP' },
+    PREV:      { action: 'seqStepBack', note: 'Step back in sequence' },
+    NEXT:      { action: 'seqStepForward', note: 'Step forward in sequence' }
+  },
+  [MODES.PLAY]: {
+    PLAY:      { nextMode: MODES.PLAY, setFlag: FLAGS.PAD_TRIGGER, note: 'Stay in PLAY / toggle padTrigger' },
+    STOP:      { nextMode: MODES.STOP, setFlag: FLAGS.NONE, note: 'Stop playback' },
+    REC:       { nextMode: MODES.RECORD, setFlag: FLAGS.NONE, note: 'Enter RECORD mode' },
+    PREV:      { action: 'seqStepBack', note: 'Back in sequence or pad nav' },
+    NEXT:      { action: 'seqStepForward', note: 'Next in sequence or pad nav' },
+    MODE_TOGGLE: {
+      condition: () => !flags.isRecordingSequence,
+      toggleFlag: FLAGS.SEQ_MODE,
+      note: 'Toggle sequence mode'
+    }
+  }
+};
+
+✅ You can dispatch actions like this:
+
+function handleButtonInput(mode, button) {
+  const transition = stateMatrix[mode]?.[button];
+  if (!transition) return;
+
+  if (transition.nextMode) mode = transition.nextMode;
+  if (transition.setFlag) Object.keys(flags).forEach(k => flags[k] = false);
+  if (transition.setFlag && transition.setFlag !== FLAGS.NONE) flags[transition.setFlag] = true;
+  if (transition.toggleFlag) flags[transition.toggleFlag] = !flags[transition.toggleFlag];
+
+  if (transition.action && typeof window[transition.action] === 'function') {
+    window[transition.action]();
+  }
+
+  updateStatus();
+}
+
+
+⸻
+
+🗺️ ASCII Diagram of State Machine
+
+ ┌────────┐           [REC TAP]
+ │  STOP  │ ───────▶  RECORD
+ └────────┘             ▲  │
+    │  ▲                │  │
+ [PLAY]│                │  │[REC REL]
+    ▼  │                │  ▼
+ ┌────────┐           ┌────────┐
+ │  PLAY  │ ◀───────  │ RECORD │
+ └────────┘ [REC]     └────────┘
+    │ ▲                  ▲
+    │ │                  │
+ [STOP]│              [STOP]
+    ▼ │                  │
+ ┌────────┐   [HOLD]     │
+ │ SEQ REC│◀─────────────┘
+ └────────┘
+
+Additional Transitions:
+────────────────────────
+[PREV/NEXT] in:
+- STOP: Load next/prev song
+- RECORD: Move step
+- PLAY + SEQ_MODE: Navigate sequence
+
+[PLAY] in PLAY:
+- Toggle isPadTriggerMode
+
+[<< + >> pressed together] in PLAY:
+- Toggle isSequenceMode
+
+[REC Hold] from any mode:
+- Start sequence recording
+
+
+⸻
+
+🛠️ What You Can Do With This
+	1.	Centralize state/flag logic in one dispatch function
+	2.	Simplify your ButtonManager to call handleButtonInput(mode, button)
+	3.	Add conditions easily (like flag toggles, sequence checks)
+	4.	Generate a UI overlay/debug panel showing current mode and flags
+	5.	Build future modes like EDIT, MIX, LIVE, etc.
+
+
+Absolutely. Let’s integrate the missing octave switch behavior and tighten up the flow to give you the complete, canonical reference for your real-time MIDI chord transformer.
+
+⸻
+
+🔑 Trigger Keys, Transpose Keys, & Octave Shifts — Master Summary
+
+🎹 1. Trigger Keys (MIDI Note Inputs)
+
+Trigger Key	Function	Output
+NOTE_FULL_CHORD_TRIGGER (58)	Play full current chord	chord
+NOTE_FULL_STRING_TRIGGER (73)	Play full current chord to string output	string
+STRING_TRIGGER_NOTES (76–84)	Play individual notes from chord (index-based)	string
+BASS_TRIGGER_NOTES (75–82)	Play root or lower voices from chord	bass
+NOTE_CHORD_TRIGGER_TOGGLE (48)	Toggle pad-trigger mode on/off	Logic flag
+
+These are expressive MIDI note triggers that let a single chord be remapped across instruments—like a guitarist plucking individual notes while a keyboardist stabs full chords.
+
+⸻
+
+🧬 2. Transpose Keys (MIDI Notes 60–71 = C3–B3)
+
+Each press changes transposeOffset, a semitone shift applied to all chord notes:
+	•	C3  (MIDI 60) = 0
+    •	C#3 (MIDI 61) = +1
+	•	D3  (MIDI 62) = +2
+	•	F3 = +5, etc.
+
+This allows key modulation on the fly
+
+⸻
+
+⬆️ 3. Octave Shift Keys
+
+Note	Affects Which Output	Behavior
+NOTE_CHORD_OCTAVE_UP (59)	chord	+1 fullChordOctaveOffset
+NOTE_CHORD_OCTAVE_DOWN (57)	chord	–1 fullChordOctaveOffset
+NOTE_STRING_OCTAVE_UP (74)	string	+1 stringOctaveOffset
+NOTE_STRING_OCTAVE_DOWN (72)	string	–1 stringOctaveOffset
+
+Pressing UP + DOWN within a short window resets to 0.
+
+⸻
+
+🔄 How the Current Chord Is Transformed Before Output
+
+Every triggered chord (from pad or key) is run through this real-time transformation pipeline before it hits the output.
+
+⸻
+
+🧪 Step-by-Step Transformation Pipeline
+
+let baseChord = Chords.string;
+
+1. Transpose
+
+baseChord.map(n => n + transposeOffset);
+
+2. Octave Offset
+	•	+ fullChordOctaveOffset * 12 → if output is "chord"
+	•	+ stringOctaveOffset * 12 → if output is "string"
+
+note + transposeOffset + (octaveOffset * 12);
+
+3. Inversion for Full Chord output
+
+invertedChord = invertChord(notes, currentInversion);
+
+Reorders notes, rotating root/third/fifth upward like:
+
+C E G → E G C → G C E ...
+
+4. Velocity Tilt for Full Chord output
+
+tiltedNotes = applyVelocityTilt(invertedChord, ccValue);
+
+	•	Higher notes = louder or softer
+	•	Simulates expressive voicing
+	•	Centered around tiltPivot
+
+5. Send Notes to Output
+
+send([NOTE_ON, pitch, velocity], outputType);
+
+Sent to:
+	•	"chord" → main harmony bus
+	•	"string" → arpeggiated or legato layer
+	•	"bass" → low-end
+	•	"main" → raw passthrough (e.g., in record mode or stop mode)
+
+⸻
+
+🎼 Output Mapping Summary
+
+Output Type	Triggered By	Note Transformations
+chord	Full chord trigger / pads	Inversion → Tilt → Transpose → Octave
+string	Full string trigger / string notes → Transpose → Octave
+bass	Bass trigger notes	Select note → Transpose → -1 Octave
+main	Live input (record mode)	No transformation — passthrough
+
+
+⸻
+
+🧠 Why This Design Is Smart
+
+✅ Modular transformation stages
+Each step (transpose, invert, tilt, octave) is isolated and chainable.
+
+✅ Live performance control
+Transpose and octave are mapped to keys. Inversion and tilt are mapped to CCs.
+
+✅ Multilayer output
+You can split one chord across bass, pads, and strings simultaneously.
+
+✅ Expressive realism
+This mimics a live band’s subtle shifts in voicing and dynamics.
+
+✅ Minimal physical input
+You can perform complex variations using just a few keys and buttons.
+
+
+⸻
+
+💡 Suggested Tweaks (No Refactor, No Modules)
+	1.	normalizeNotes()
+If MIDI notes come from unpredictable sources, maybe harden it a bit against double-sharps or enharmonic edge cases (C##, E#, etc.). Not urgent.
+	2.	if (typeof window !== 'undefined') ...
+You’re doing a CommonJS/Node fallback export. Since this is a monolith, you probably don’t need to support module.exports.
+	3.	debounceSave()
+Could be improved to cancel pending saves when the song changes. This avoids stale writes if you switch songs fast.
+	4.	prepareChordNotesForOutput()
+Minor optimization: if all elements already have pitch and velocity, skip the map.
+	5.	DOMContentLoaded handler
+It’s long and contains a lot of first-run logic. If you ever wanted to re-run it (e.g. for hot reloads or testing), extracting it to a named initApp() would make that easier.
+
+⸻
+
+No ES modules. No breaking the file up. All 2001-core-safe. Want me to help with a zip or minified version next?
+
+
