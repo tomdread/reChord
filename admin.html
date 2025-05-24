@@ -1,166 +1,223 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>reChord Mini Admin</title>
-  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <style>
-    body { font-family: sans-serif; padding: 2em; background: #f9f9f9; }
-    input[type="text"] { width: 100%; padding: 6px; margin-bottom: 8px; }
-    button { margin-right: 8px; padding: 6px 12px; }
-    .song-box { border: 1px solid #ccc; padding: 1em; margin-top: 1em; background: #fff; }
-    .pad { margin-bottom: 1em; }
-    label { display: block; margin-top: 0.5em; font-weight: bold; }
-  </style>
+    <meta charset="UTF-8">
+    <title>reChord Admin Editor</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1, h2 {
+            margin-top: 0;
+        }
+        select, button, input, textarea {
+            font-size: 16px;
+            padding: 6px;
+            margin: 5px 0;
+        }
+        .pad-list button {
+            margin: 2px;
+            padding: 10px;
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .pad-list button.active {
+            background: #0056b3;
+        }
+        .piano {
+            display: flex;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+        .key {
+            width: 40px;
+            height: 120px;
+            margin: 1px;
+            border: 1px solid #333;
+            background: white;
+            text-align: center;
+            line-height: 120px;
+            user-select: none;
+            cursor: pointer;
+        }
+        .key.active {
+            background: #4caf50;
+            color: white;
+        }
+        .notes-area {
+            width: 100%;
+            height: 100px;
+        }
+    </style>
 </head>
 <body>
+<h1>🎼 reChord Admin Editor</h1>
 
-<h2>🎵 reChord Simplified Admin</h2>
+<h2>Choose a Song</h2>
+<select id="songSelector"></select>
 
-<input id="searchInput" placeholder="Search by song name..." />
-<button id="loadBtn">Load</button>
-<button id="saveBtn">Save</button>
-<button id="exportBtn">Export</button>
-<input type="file" id="importFile" style="display:none;" />
-<button id="importBtn">Import</button>
+<h2>Notes / Ideas</h2>
+<textarea id="songNotes" class="notes-area" placeholder="Write your song ideas here..."></textarea>
 
-<div id="songForm" class="song-box" style="display:none;">
-  <label>Song Name: <input type="text" id="songName" /></label>
-  <div id="padsContainer"></div>
-</div>
+<h2>Pad Chords</h2>
+<div class="pad-list" id="padList"></div>
+
+<h2>Chord Editor</h2>
+<div class="piano" id="piano"></div>
+<button id="savePad">💾 Save Pad</button>
+
+<br><br>
+<button id="exportJSON">⬇ Export Song</button>
+<input type="file" id="importJSON" accept=".json">
 
 <script>
-const DB_NAME = "ChordDB", DB_VERSION = 2;
-let db, currentKey = null, currentData = null;
+const DB_NAME = 'ChordDB';
+const DB_VERSION = 2;
+let db;
+let currentSong = null;
+let currentPad = null;
+let selectedNotes = [];
+const noteRange = [...Array(25).keys()].map(i => i + 48); // C3 to C5
 
 function openDB() {
-  return new Promise((res, rej) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onsuccess = () => { db = req.result; res(); };
-    req.onerror = () => rej(req.error);
-    req.onupgradeneeded = e => {
-      const upgradeDb = e.target.result;
-      if (!upgradeDb.objectStoreNames.contains('songs')) upgradeDb.createObjectStore('songs');
-    };
-  });
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = () => reject('Failed to open DB');
+        request.onsuccess = () => {
+            db = request.result;
+            resolve();
+        };
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('songs')) db.createObjectStore('songs');
+        };
+    });
 }
 
-function getAllSongs() {
-  return new Promise((res, rej) => {
+function listSongs() {
     const tx = db.transaction('songs', 'readonly');
     const store = tx.objectStore('songs');
     const req = store.getAll();
-    req.onsuccess = () => res(req.result);
-    req.onerror = () => rej(req.error);
-  });
+    req.onsuccess = () => {
+        const songs = req.result;
+        $('#songSelector').empty();
+        songs.forEach(song => {
+            $('#songSelector').append(`<option value="${song.id}">${song.name || song.id}</option>`);
+        });
+        if (songs.length) loadSong(songs[0].id);
+    };
 }
 
-function getSongByName(name) {
-  return new Promise((res, rej) => {
+function loadSong(id) {
     const tx = db.transaction('songs', 'readonly');
     const store = tx.objectStore('songs');
-    const cursor = store.openCursor();
-    cursor.onsuccess = e => {
-      const cur = e.target.result;
-      if (cur) {
-        if (cur.value.name && cur.value.name.toLowerCase().includes(name.toLowerCase())) {
-          res({ key: cur.key, data: cur.value });
-          return;
-        }
-        cur.continue();
-      } else {
-        res(null);
-      }
+    const req = store.get(id);
+    req.onsuccess = () => {
+        currentSong = req.result;
+        $('#songNotes').val(currentSong.notes || '');
+        renderPadList();
+        clearPiano();
     };
-    cursor.onerror = () => rej(cursor.error);
-  });
 }
 
-function renderSong(song) {
-  $("#songForm").show();
-  $("#songName").val(song.name);
-  $("#padsContainer").empty();
-  for (const [pad, obj] of Object.entries(song.pads || {})) {
-    const chord = (obj.chord || []).join(", ");
-    const bass = (obj.bass || []).join(", ");
-    $("#padsContainer").append(`
-      <div class="pad">
-        <label>Pad ${pad}</label>
-        <input class="padChord" data-pad="${pad}" placeholder="Chord notes" value="${chord}" />
-        <input class="padBass" data-pad="${pad}" placeholder="Bass notes" value="${bass}" />
-      </div>
-    `);
-  }
-}
-
-function saveCurrent() {
-  if (!currentKey) return;
-  const updatedPads = {};
-  $(".padChord").each(function() {
-    const pad = $(this).data("pad");
-    const chord = $(this).val().split(",").map(n => parseInt(n.trim())).filter(n => !isNaN(n));
-    const bass = $(`.padBass[data-pad=${pad}]`).val().split(",").map(n => parseInt(n.trim())).filter(n => !isNaN(n));
-    updatedPads[pad] = { chord, bass };
-  });
-  const updated = {
-    ...currentData,
-    name: $("#songName").val(),
-    pads: updatedPads
-  };
-  const tx = db.transaction('songs', 'readwrite');
-  const store = tx.objectStore('songs');
-  store.put(updated, currentKey);
-  alert("Saved");
-}
-
-function exportSong() {
-  if (!currentData) return;
-  const blob = new Blob([JSON.stringify(currentData, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = (currentData.name || "song") + ".json";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function importSong(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const obj = JSON.parse(reader.result);
-      if (!obj.id) obj.id = crypto.randomUUID();
-      const tx = db.transaction('songs', 'readwrite');
-      const store = tx.objectStore('songs');
-      store.put(obj, obj.id);
-      alert("Imported");
-    } catch (e) {
-      alert("Failed to import: " + e.message);
+function renderPadList() {
+    $('#padList').empty();
+    const pads = currentSong.pads || {};
+    for (let i = 36; i <= 43; i++) {
+        const label = `Pad ${i}`;
+        const btn = $(`<button>${label}</button>`);
+        btn.on('click', () => selectPad(i));
+        $('#padList').append(btn);
     }
-  };
-  reader.readAsText(file);
 }
 
-$(async function() {
-  await openDB();
+function selectPad(padNum) {
+    currentPad = padNum;
+    $('.pad-list button').removeClass('active');
+    $(`.pad-list button:contains(Pad ${padNum})`).addClass('active');
+    const chord = (currentSong.pads?.[padNum]?.chord || []);
+    selectedNotes = [...chord];
+    renderPiano();
+}
 
-  $("#loadBtn").click(async () => {
-    const result = await getSongByName($("#searchInput").val());
-    if (result) {
-      currentKey = result.key;
-      currentData = result.data;
-      renderSong(currentData);
+function renderPiano() {
+    $('#piano').empty();
+    noteRange.forEach(note => {
+        const key = $(`<div class="key">${note}</div>`);
+        if (selectedNotes.includes(note)) key.addClass('active');
+        key.on('click', () => toggleNote(note, key));
+        $('#piano').append(key);
+    });
+}
+
+function toggleNote(note, keyEl) {
+    if (selectedNotes.includes(note)) {
+        selectedNotes = selectedNotes.filter(n => n !== note);
+        keyEl.removeClass('active');
     } else {
-      alert("Not found");
+        selectedNotes.push(note);
+        keyEl.addClass('active');
     }
-  });
+}
 
-  $("#saveBtn").click(saveCurrent);
-  $("#exportBtn").click(exportSong);
-  $("#importBtn").click(() => $("#importFile").click());
-  $("#importFile").change(e => importSong(e.target.files[0]));
+function clearPiano() {
+    selectedNotes = [];
+    $('#piano .key').removeClass('active');
+}
+
+function savePad() {
+    if (!currentSong.pads) currentSong.pads = {};
+    currentSong.pads[currentPad] = { chord: [...selectedNotes] };
+    currentSong.notes = $('#songNotes').val();
+    const tx = db.transaction('songs', 'readwrite');
+    const store = tx.objectStore('songs');
+    store.put(currentSong, currentSong.id);
+    clearPiano();
+}
+
+function exportJSON() {
+    const json = JSON.stringify(currentSong, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${currentSong.name || currentSong.id}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function importJSONFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        const data = JSON.parse(e.target.result);
+        const tx = db.transaction('songs', 'readwrite');
+        const store = tx.objectStore('songs');
+        store.put(data, data.id);
+        tx.oncomplete = () => listSongs();
+    };
+    reader.readAsText(file);
+}
+
+$(async () => {
+    await openDB();
+    listSongs();
+
+    $('#songSelector').on('change', function() {
+        const id = $(this).val();
+        loadSong(id);
+    });
+
+    $('#savePad').on('click', savePad);
+    $('#exportJSON').on('click', exportJSON);
+    $('#importJSON').on('change', function(e) {
+        const file = e.target.files[0];
+        if (file) importJSONFile(file);
+    });
 });
 </script>
-
 </body>
 </html>
