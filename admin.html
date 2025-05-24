@@ -1,8 +1,9 @@
+
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>reChord IndexedDB Admin2</title>
+    <title>reChord IndexedDB Admin</title>
     <style>
         /* Shared styles from existing admin.html */
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 1.5rem; background: #f0f2f5; color: #333; line-height: 1.6; }
@@ -278,9 +279,8 @@
             <input type="text" id="songSearchInput" placeholder="Search song name or ID..." autocomplete="off">
             <div id="songSuggestions"></div>
         </div>
-        <!-- Load button is kept for explicit loading if needed, though search is primary -->
-        <button class="info" onclick="loadAndRenderEntry()">Load</button>
-        <button onclick="refreshKeys()">🔁 Refresh Keys</button>
+        <button class="info" id="loadButton">Load</button>
+        <button id="refreshKeysButton">🔁 Refresh Keys</button>
         <button class="info" onclick="createNewEntry()">➕ New Entry</button>
     </div>
 
@@ -443,7 +443,7 @@
             adminPianoChordNameDisplay: null,
             applyPadNumberInput: null,
             applySequenceIndexInput: null,
-            songNotesTextarea: null, // Will be cached dynamically
+            songNotesTextarea: null,
             notificationArea: null,
             saveIndicator: null,
         };
@@ -464,8 +464,8 @@
             domElements.notificationArea = document.getElementById('notification-area');
             domElements.saveIndicator = document.getElementById('saveIndicator');
 
-            // songNotesTextarea is created dynamically within renderForm, so it's not cached here initially.
-            // It will be assigned *inside* renderForm after its creation.
+            // Notes textarea will be created dynamically when a song is loaded/created
+            // domElements.songNotesTextarea = document.getElementById('songNotes');
         }
 
         async function initDB() {
@@ -798,35 +798,16 @@
                 domElements.dataEntryForm.innerHTML = formHtml;
                 domElements.adminPianoSection.style.display = 'block'; // Show piano for songs
 
-                // DEFERRED ELEMENT ACCESS AND EVENT LISTENER ATTACHMENT
-                // Using setTimeout(0) to ensure the DOM has fully updated after innerHTML.
-                setTimeout(() => {
-                    // Cache the notes textarea and attach auto-save
-                    domElements.songNotesTextarea = document.getElementById('songNotes');
-                    if (domElements.songNotesTextarea) {
-                        domElements.songNotesTextarea.addEventListener('input', debouncedSaveEntry);
-                    } else {
-                        console.error("Failed to find 'songNotes' textarea after innerHTML update.");
-                        showNotification("Failed to load song notes editor. Please refresh.", "error");
-                    }
+                // Cache the notes textarea and attach auto-save
+                domElements.songNotesTextarea = document.getElementById('songNotes');
+                if (domElements.songNotesTextarea) {
+                    domElements.songNotesTextarea.addEventListener('input', debouncedSaveEntry);
+                }
 
-                    // Attach auto-save to JSON textareas
-                    const songSequenceTextarea = document.getElementById('songSequence');
-                    if (songSequenceTextarea) {
-                        songSequenceTextarea.addEventListener('input', debouncedSaveEntry);
-                    } else {
-                        console.error("Failed to find 'songSequence' textarea after innerHTML update.");
-                        showNotification("Failed to load sequence editor. Please refresh.", "error");
-                    }
+                // Attach auto-save to JSON textareas
+                document.getElementById('songSequence').addEventListener('input', debouncedSaveEntry);
+                document.getElementById('songPads').addEventListener('input', debouncedSaveEntry);
 
-                    const songPadsTextarea = document.getElementById('songPads');
-                    if (songPadsTextarea) {
-                        songPadsTextarea.addEventListener('input', debouncedSaveEntry);
-                    } else {
-                        console.error("Failed to find 'songPads' textarea after innerHTML update.");
-                        showNotification("Failed to load pads editor. Please refresh.", "error");
-                    }
-                }, 0); // Defer to next event loop cycle
 
                 loadPianoWithNotes([]); // Clear admin piano for new load
             } else if (storeName === 'ports') {
@@ -896,11 +877,9 @@
                 domElements.dataEntryForm.innerHTML = formHtml;
 
                 // Attach auto-save to port config fields
-                setTimeout(() => {
-                    document.querySelectorAll('#dataEntryForm input').forEach(input => {
-                        input.addEventListener('input', debouncedSaveEntry);
-                    });
-                }, 0);
+                document.querySelectorAll('#dataEntryForm input').forEach(input => {
+                    input.addEventListener('input', debouncedSaveEntry);
+                });
             }
             domElements.jsonEditor.value = JSON.stringify(data, null, 2);
         }
@@ -919,13 +898,8 @@
         // --- Data Handling Functions ---
         async function loadAndRenderEntry() {
             const storeName = domElements.storeSelect.value;
-            let key = domElements.songSearchInput.value; // Get key from search input
-
-            // If the store is 'ports', the key is fixed as 'current'
-            if (storeName === 'ports') {
-                key = 'current';
-                domElements.songSearchInput.value = key; // Ensure input shows 'current'
-            }
+            let key = domElements.songSearchInput.value || domElements.keySelect.value; // For ports, use keySelect value
+            if (storeName === 'ports') key = 'current'; // Ports only have one key
 
             if (!key) {
                 renderForm(storeName, {}); // Render an empty form if no key is selected
@@ -1055,8 +1029,8 @@
             const storeName = domElements.storeSelect.value;
             domElements.songSuggestions.innerHTML = '';
             domElements.songSearchInput.value = '';
-            // domElements.keySelect is not used for song keys, only for ports now, and is hidden.
-            // If it were visible for some reason, ensure it's cleared: domElements.keySelect.innerHTML = '';
+            domElements.keySelect.innerHTML = ''; // Clear port key select
+            domElements.keySelect.style.display = 'none'; // Hide by default
 
             if (storeName === 'songs') {
                 domElements.songSearchInput.style.display = 'inline-block';
@@ -1064,7 +1038,12 @@
                 filterAndDisplaySuggestions(); // Populate initial suggestions
             } else { // ports store
                 domElements.songSearchInput.style.display = 'none';
-                // For 'ports', ensure currentLoadedKey is set and explicitly load it
+                domElements.keySelect.style.display = 'inline-block';
+                const opt = document.createElement('option');
+                opt.value = 'current';
+                opt.textContent = 'current';
+                domElements.keySelect.appendChild(opt);
+                domElements.keySelect.value = 'current';
                 currentLoadedKey = 'current';
                 await loadAndRenderEntry(); // Load the 'current' port config
             }
@@ -1206,7 +1185,7 @@
             domElements.songSuggestions.innerHTML = '';
             activeSuggestionIndex = -1;
 
-            if (query.length < 2 && query.length !== 0) { // If 0 characters, or 1, don't display suggestions
+            if (query.length < 2) { // Show all if query is short
                 domElements.songSuggestions.style.display = 'none';
                 return;
             }
@@ -1291,8 +1270,44 @@
             }
         });
 
+        // --- Missing Function Implementations ---
+        async function loadAndRenderEntry() {
+            const key = domElements.songSearchInput.value.trim();
+            if (!key) {
+                showNotification('Please enter a song name or ID', 'warning');
+                return;
+            }
+            try {
+                await loadEntry(key);
+                showNotification(`Loaded: ${key}`, 'success');
+            } catch (error) {
+                showNotification(`Failed to load: ${error.message}`, 'error');
+                console.error('Load error:', error);
+            }
+        }
+
+        async function refreshKeys() {
+            try {
+                const storeSelect = document.getElementById('storeSelect');
+                const storeName = storeSelect.value;
+                const keys = await getAllKeys(storeName);
+                // Update UI with keys
+                console.log('Refreshed keys:', keys);
+                showNotification('Keys refreshed', 'info');
+            } catch (error) {
+                showNotification('Failed to refresh keys: ' + error.message, 'error');
+                console.error('Refresh keys error:', error);
+            }
+        }
+
         // Initialize on DOM Content Loaded
         window.addEventListener('DOMContentLoaded', async () => {
+            // Set up button event listeners
+            document.addEventListener('click', (e) => {
+                if (e.target.id === 'loadButton') loadAndRenderEntry();
+                if (e.target.id === 'refreshKeysButton') refreshKeys();
+            });
+            
             cacheDOMElements(); // Must cache first
             createAdminPianoSVG(); // Create the interactive piano once
             try {
