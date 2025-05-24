@@ -1,1 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>reChord IndexedDB Admin</title>
+  <style>
+    body { font-family: monospace; padding: 1rem; background: #f9f9f9; color: #111; }
+    h1 { font-size: 1.4em; margin-bottom: 0.2em; }
+    select, textarea, button {
+      font-family: monospace;
+      margin: 0.3em;
+      padding: 0.4em;
+      font-size: 1em;
+    }
+    textarea { width: 100%; height: 300px; }
+    .controls { margin-bottom: 1em; }
+    .danger { background: #c00; color: #fff; }
+    .info { background: #0077cc; color: #fff; }
+    .section { border: 1px solid #ccc; padding: 1em; margin-top: 1em; background: #fff; }
+  </style>
+</head>
+<body>
+  <h1>🎛 reChord IndexedDB Admin</h1>
 
+  <div class="controls">
+    <label>Store:
+      <select id="storeSelect">
+        <option value="songs">songs</option>
+        <option value="ports">ports</option>
+      </select>
+    </label>
+    <label>Key:
+      <select id="keySelect"></select>
+    </label>
+    <button class="info" onclick="loadEntry()">Load</button>
+    <button onclick="refreshKeys()">🔁 Refresh Keys</button>
+  </div>
+
+  <div class="section">
+    <textarea id="jsonEditor" placeholder="JSON view of data"></textarea>
+    <div class="controls">
+      <button onclick="saveEntry()">💾 Save</button>
+      <button class="danger" onclick="deleteEntry()">🗑 Delete</button>
+      <button onclick="downloadJSON()">⬇ Export JSON</button>
+      <input type="file" id="jsonFile" accept=".json" onchange="importJSON(event)">
+      <label for="jsonFile" class="info" style="cursor: pointer;">⬆ Import JSON</label>
+    </div>
+  </div>
+
+  <script>
+    const DB_NAME = 'ChordDB';
+    const DB_VERSION = 2;
+    let db;
+
+    async function initDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onsuccess = () => {
+          db = request.result;
+          resolve();
+        };
+        request.onerror = () => reject(request.error);
+        request.onupgradeneeded = (e) => {
+          const upgradeDb = e.target.result;
+          if (!upgradeDb.objectStoreNames.contains('songs')) upgradeDb.createObjectStore('songs');
+          if (!upgradeDb.objectStoreNames.contains('ports')) upgradeDb.createObjectStore('ports');
+        };
+      });
+    }
+
+    function refreshKeys() {
+      const storeName = document.getElementById('storeSelect').value;
+      const keySelect = document.getElementById('keySelect');
+      keySelect.innerHTML = '';
+
+      const tx = db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      const req = store.getAllKeys();
+      req.onsuccess = () => {
+        req.result.forEach(k => {
+          const opt = document.createElement('option');
+          opt.value = k;
+          opt.textContent = k;
+          keySelect.appendChild(opt);
+        });
+      };
+    }
+
+    function loadEntry() {
+      const storeName = document.getElementById('storeSelect').value;
+      const key = document.getElementById('keySelect').value;
+      const tx = db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      const req = store.get(key);
+      req.onsuccess = () => {
+        document.getElementById('jsonEditor').value = JSON.stringify(req.result, null, 2);
+      };
+    }
+
+    function saveEntry() {
+      const storeName = document.getElementById('storeSelect').value;
+      const key = document.getElementById('keySelect').value;
+      const data = JSON.parse(document.getElementById('jsonEditor').value);
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+      store.put(data, key).onsuccess = () => alert('✅ Saved');
+    }
+
+    function deleteEntry() {
+      const storeName = document.getElementById('storeSelect').value;
+      const key = document.getElementById('keySelect').value;
+      if (!confirm(`Delete key "${key}" from ${storeName}?`)) return;
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+      store.delete(key).onsuccess = () => {
+        alert('🗑 Deleted');
+        refreshKeys();
+        document.getElementById('jsonEditor').value = '';
+      };
+    }
+
+    function downloadJSON() {
+      const json = document.getElementById('jsonEditor').value;
+      const blob = new Blob([json], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${document.getElementById('keySelect').value || 'export'}.json`;
+      a.click();
+    }
+
+    function importJSON(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        document.getElementById('jsonEditor').value = e.target.result;
+      };
+      reader.readAsText(file);
+    }
+
+    document.getElementById('storeSelect').addEventListener('change', refreshKeys);
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        await initDB();
+        refreshKeys();
+      } catch (err) {
+        alert('❌ Failed to open DB: ' + err);
+      }
+    });
+  </script>
+</body>
+</html>
