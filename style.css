@@ -216,7 +216,10 @@ select:disabled {
 }
 
 .piano-container {
-    padding: 20px;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    padding: 10px 0;
     background: #f0f0f0;
     border-radius: var(--radius);
     margin: 20px 0;
@@ -390,4 +393,10 @@ select:disabled {
 
 .port-label select {
     margin-right: 4px;  /* Reduce right margin of port selectors */
+}
+
+@media (max-width: 768px) {
+    .pad-chords-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
