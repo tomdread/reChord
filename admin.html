@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <title>reChord IndexedDB Admin</title>
     <style>
+        /* Shared styles from existing admin.html */
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 1.5rem; background: #f0f2f5; color: #333; line-height: 1.6; }
         h1 { font-size: 1.8em; margin-bottom: 0.5em; color: #2c3e50; }
         h2 { font-size: 1.3em; margin-top: 1.5em; margin-bottom: 0.8em; color: #34495e; }
@@ -37,7 +38,7 @@
 
         textarea {
             width: 100%;
-            height: 200px; /* Adjusted height */
+            height: 100px; /* Adjusted height */
             resize: vertical;
             padding: 0.8em;
             border: 1px solid #ddd;
@@ -119,6 +120,148 @@
         .key-input {
             width: 150px; /* Adjust width for key input */
         }
+
+        /* --- New/Modified styles for requested features --- */
+        #songSearchInput {
+            flex-grow: 1;
+            margin-right: 0.5em;
+        }
+        #songSearchContainer {
+            position: relative;
+            flex-grow: 1;
+            margin-right: 0.5em;
+        }
+        #songSuggestions {
+            position: absolute;
+            top: 100%; /* Below the input */
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            z-index: 10;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none; /* Hidden by default */
+        }
+        .suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+        .suggestion-item:hover, .suggestion-item.active-suggestion {
+            background-color: #f0f0f0;
+        }
+
+        /* Piano styles (from style.css) */
+        .piano-container {
+            padding: 20px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            margin: 20px 0;
+            overflow-x: auto;
+            white-space: nowrap;
+            border: 1px solid #ccc;
+        }
+        .piano-key {
+            transition: all 0.1s ease;
+            cursor: pointer; /* Enable clicking */
+        }
+        .piano-key.white {
+            fill: white;
+            stroke: #ddd;
+            stroke-width: 1;
+        }
+        .piano-key.black {
+            fill: #333;
+            stroke: #000;
+            stroke-width: 1;
+        }
+        .piano-key.active {
+            fill: #4CAF50;
+            filter: drop-shadow(0 0 4px rgba(76,175,80,0.8));
+        }
+        .piano-key:hover {
+            filter: brightness(0.95);
+        }
+        .key-text {
+            font-size: 8px;
+            font-family: monospace;
+            user-select: none;
+            pointer-events: none;
+            fill: #555; /* Default text color */
+        }
+        .piano-key.black + .key-text {
+            fill: #fff; /* Black key text color */
+        }
+        .piano-key-section {
+            border: 1px solid #e0e0e0;
+            padding: 1.5em;
+            margin-top: 1.5em;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .current-piano-chord-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f2f2f2;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .current-piano-chord-info code {
+            background: #eee;
+            padding: 0 4px;
+            border-radius: 3px;
+        }
+        .apply-buttons {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .apply-buttons button {
+            flex: 1;
+            min-width: 150px;
+        }
+
+        #notification-area {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        .notification {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px 24px;
+            margin: 8px;
+            border-radius: 4px;
+            opacity: 1;
+            transition: opacity 0.5s;
+        }
+        .notification.success { border-left: 4px solid #4CAF50; }
+        .notification.info { border-left: 4px solid #2196F3; }
+        .notification.warning { border-left: 4px solid #FFC107; }
+        .notification.error { border-left: 4px solid #f44336; }
+
+        .save-indicator {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(76, 175, 80, 0.1);
+            color: #4CAF50;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1001;
+        }
     </style>
 </head>
 <body>
@@ -131,9 +274,10 @@
                 <option value="ports">ports</option>
             </select>
         </label>
-        <label>Key:
-            <select id="keySelect" class="key-input"></select>
-        </label>
+        <div id="songSearchContainer">
+            <input type="text" id="songSearchInput" placeholder="Search song name or ID..." autocomplete="off">
+            <div id="songSuggestions"></div>
+        </div>
         <button class="info" onclick="loadAndRenderEntry()">Load</button>
         <button onclick="refreshKeys()">🔁 Refresh Keys</button>
         <button class="info" onclick="createNewEntry()">➕ New Entry</button>
@@ -150,6 +294,29 @@
         </div>
     </div>
 
+    <div class="piano-key-section" id="adminPianoSection" style="display: none;">
+        <h2>Edit Chord on Piano</h2>
+        <div id="admin-piano-container" class="piano-container"></div>
+        <div class="current-piano-chord-info">
+            <div>Current Piano Notes: <code><span id="adminPianoNotes">No Notes</span></code></div>
+            <div>Detected Chord: <code><span id="adminPianoChordName">-</span></code></div>
+            <div class="form-row apply-buttons">
+                <div class="form-group">
+                    <label for="applyPadNumber">Apply to Pad:</label>
+                    <input type="number" id="applyPadNumber" min="36" max="43" value="36" />
+                    <button onclick="applyPianoToPad()">Apply to Pad</button>
+                    <button onclick="loadPadToPiano()">Load from Pad</button>
+                </div>
+                <div class="form-group">
+                    <label for="applySequenceIndex">Apply to Seq Step:</label>
+                    <input type="number" id="applySequenceIndex" min="1" value="1" />
+                    <button onclick="applyPianoToSequenceStep()">Apply to Sequence Step</button>
+                    <button onclick="loadSequenceStepToPiano()">Load from Seq Step</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="section">
         <h2>Raw JSON Import/Export (Advanced)</h2>
         <textarea id="jsonEditor" placeholder="JSON view of data (for import/export)"></textarea>
@@ -160,11 +327,145 @@
         </div>
     </div>
 
+    <div id="notification-area"></div>
+    <div class="save-indicator" id="saveIndicator">✓ Saved</div>
+
     <script>
+        // === chord-name-detector.js content starts here ===
+        "use strict";
+
+        const NOTE_TO_SEMITONE = {
+            'C': 0,  'C#': 1, 'Db': 1,
+            'D': 2,  'D#': 3, 'Eb': 3,
+            'E': 4,  'Fb': 4, 'E#': 5,
+            'F': 5,  'F#': 6, 'Gb': 6,
+            'G': 7,  'G#': 8, 'Ab': 8,
+            'A': 9,  'A#': 10, 'Bb': 10,
+            'B': 11, 'Cb': 11, 'B#': 0
+        };
+
+        const CHORD_PATTERNS = {
+            'Major':            [0, 4, 7],
+            'Minor':            [0, 3, 7],
+            'Diminished':       [0, 3, 6],
+            'Augmented':        [0, 4, 8],
+            'Sus2':             [0, 2, 7],
+            'Sus4':             [0, 5, 7],
+            'Major 7th':        [0, 4, 7, 11],
+            'Minor 7th':        [0, 3, 7, 10],
+            'Dominant 7th':     [0, 4, 7, 10],
+            'Half-Diminished':  [0, 3, 6, 10],
+            'Diminished 7th':   [0, 3, 6, 9],
+            'Minor-Major 7th':  [0, 3, 7, 11],
+            'Aug-Major 7th':    [0, 4, 8, 11]
+        };
+
+        const OCTAVE_SEMITONES = 12;
+
+        function normalizeNotes(notes) {
+            const getPitchClass = note => note.replace(/[0-9]/g, '').toUpperCase();
+            const semitones = notes.map(n => NOTE_TO_SEMITONE[getPitchClass(n)]);
+            return [...new Set(semitones)];
+        }
+
+        function getIntervals(root, semitones) {
+            return semitones.map(p => (p - root + OCTAVE_SEMITONES) % OCTAVE_SEMITONES).sort((a, b) => a - b);
+        }
+
+        function matchChord(intervals) {
+            for (const [name, pattern] of Object.entries(CHORD_PATTERNS)) {
+            if (pattern.length !== intervals.length) continue;
+            if (pattern.every((val, i) => val === intervals[i])) return name;
+            }
+            return null;
+        }
+
+        function detectChord(notes) {
+            if (!notes || notes.length === 0) return null;
+            const uniqueSemitones = normalizeNotes(notes);
+            if (uniqueSemitones.length < 2) return null;
+
+            for (let root of uniqueSemitones) {
+            const intervals = getIntervals(root, uniqueSemitones);
+            const chordName = matchChord(intervals);
+            if (chordName) {
+                const rootNote = Object.keys(NOTE_TO_SEMITONE)
+                .find(k => NOTE_TO_SEMITONE[k] === root && !k.includes('b') && k.length <= 2);
+                return `${rootNote} ${chordName}`;
+            }
+            }
+            return 'Unknown Chord';
+        }
+        // === chord-name-detector.js content ends here ===
+
         const DB_NAME = 'ChordDB';
         const DB_VERSION = 2;
         let db;
-        let currentLoadedKey = null; // To keep track of the currently loaded key
+        let currentLoadedKey = null; // To keep track of the currently loaded key for song/port
+        let currentLoadedData = null; // The full data object of the currently loaded song/port
+        let allSongNames = []; // Cache for song names for search functionality
+
+        // Debounce utility function
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            };
+        }
+
+        // Global state for Admin Piano Notes
+        let adminPianoNotes = []; // Array of MIDI note numbers
+        const PIANO_START_NOTE = 21; // A0 (MIDI note 21)
+        const PIANO_END_NOTE = 108;  // C8 (MIDI note 108)
+        const WHITE_KEY_WIDTH = 24;
+        const WHITE_KEY_HEIGHT = 120;
+        const BLACK_KEY_WIDTH = 16;
+        const BLACK_KEY_HEIGHT = 80;
+        const KEY_TEXT_Y_OFFSET = 5;
+        const SVG_KEY_STROKE_WIDTH = 1;
+        const SVG_KEY_TEXT_FONT_SIZE = "8px";
+        const pianoKeyElements = {}; // Cache for piano SVG elements
+
+        // DOM Element Cache
+        const domElements = {
+            storeSelect: null,
+            songSearchInput: null,
+            songSuggestions: null,
+            keySelect: null, // Will be dynamically replaced/hidden but keep reference for now if needed.
+            dataEntryForm: null,
+            jsonEditor: null,
+            adminPianoSection: null,
+            adminPianoContainer: null,
+            adminPianoNotesDisplay: null,
+            adminPianoChordNameDisplay: null,
+            applyPadNumberInput: null,
+            applySequenceIndexInput: null,
+            songNotesTextarea: null,
+            notificationArea: null,
+            saveIndicator: null,
+        };
+
+        function cacheDOMElements() {
+            domElements.storeSelect = document.getElementById('storeSelect');
+            domElements.songSearchInput = document.getElementById('songSearchInput');
+            domElements.songSuggestions = document.getElementById('songSuggestions');
+            domElements.keySelect = document.getElementById('keySelect'); // Placeholder, will be unused for songs
+            domElements.dataEntryForm = document.getElementById('dataEntryForm');
+            domElements.jsonEditor = document.getElementById('jsonEditor');
+            domElements.adminPianoSection = document.getElementById('adminPianoSection');
+            domElements.adminPianoContainer = document.getElementById('admin-piano-container');
+            domElements.adminPianoNotesDisplay = document.getElementById('adminPianoNotes');
+            domElements.adminPianoChordNameDisplay = document.getElementById('adminPianoChordName');
+            domElements.applyPadNumberInput = document.getElementById('applyPadNumber');
+            domElements.applySequenceIndexInput = document.getElementById('applySequenceIndex');
+            domElements.notificationArea = document.getElementById('notification-area');
+            domElements.saveIndicator = document.getElementById('saveIndicator');
+
+            // Notes textarea will be created dynamically when a song is loaded/created
+            // domElements.songNotesTextarea = document.getElementById('songNotes');
+        }
 
         async function initDB() {
             return new Promise((resolve, reject) => {
@@ -189,15 +490,285 @@
             });
         }
 
+        // --- UI Feedback & Notifications ---
+        function showNotification(message, type = 'info', duration = 3000) {
+            if (!domElements.notificationArea) return;
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            domElements.notificationArea.appendChild(notification);
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 500);
+            }, duration);
+        }
+
+        function showSaveIndicator() {
+            domElements.saveIndicator.style.opacity = '1';
+            setTimeout(() => {
+                domElements.saveIndicator.style.opacity = '0';
+            }, 1500);
+        }
+
+        // --- Core Data Save Function ---
+        const debouncedSaveEntry = debounce(async () => {
+            const storeName = domElements.storeSelect.value;
+            try {
+                const { data, key } = collectFormData(storeName);
+                if (!key) {
+                    showNotification('Cannot auto-save: Key not specified.', 'warning');
+                    return;
+                }
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    const request = store.put(data, key);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+                currentLoadedData = data; // Update the cached data after saving
+                showSaveIndicator();
+                showNotification(`Auto-saved: ${key}`, 'success', 1000);
+            } catch (error) {
+                showNotification('Auto-save failed: ' + error.message, 'error');
+                console.error('Auto-save error:', error);
+            - }
+        }, 1000); // Debounce by 1 second
+
+        // --- Piano Display Functions (adapted from index.html) ---
+        function getNoteNameFromMIDI(midiNote) {
+            const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+            const octave = Math.floor(midiNote / OCTAVE_SEMITONES) - 1;
+            const noteName = notes[midiNote % OCTAVE_SEMITONES];
+            return `${noteName}${octave}`;
+        }
+
+        function countWhiteKeysInPianoRange(startNote, endNote) {
+            let count = 0;
+            for (let note = startNote; note <= endNote; note++) {
+                if (!getNoteNameFromMIDI(note).includes('#')) count++;
+            }
+            return count;
+        }
+
+        function createAdminPianoSVG() {
+            const pianoId = 'admin-piano-container';
+            const pianoContainer = domElements.adminPianoContainer;
+            if (!pianoContainer) { console.warn(`Piano container ${pianoId} not found`); return; }
+
+            // Clear previous SVG if any
+            pianoContainer.innerHTML = '';
+            pianoKeyElements[pianoId] = {}; // Initialize cache for this piano's keys
+
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            const totalWhiteKeys = countWhiteKeysInPianoRange(PIANO_START_NOTE, PIANO_END_NOTE);
+            const whiteKeyBorderOffset = SVG_KEY_STROKE_WIDTH;
+
+            svg.setAttribute('width', totalWhiteKeys * WHITE_KEY_WIDTH + (2 * whiteKeyBorderOffset));
+            svg.setAttribute('height', WHITE_KEY_HEIGHT + (2 * whiteKeyBorderOffset));
+
+            const whiteKeysGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            const blackKeysGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            let whiteKeyIndex = 0;
+
+            for (let note = PIANO_START_NOTE; note <= PIANO_END_NOTE; note++) {
+                const noteName = getNoteNameFromMIDI(note);
+                const isBlackKey = noteName.includes('#');
+
+                const keyRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                keyRect.dataset.note = note;
+                keyRect.classList.add('piano-key');
+                pianoKeyElements[pianoId][note] = keyRect; // Cache SVG key element
+
+                const keyText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                keyText.setAttribute('class', 'key-text');
+                keyText.textContent = noteName;
+                keyText.style.fontSize = SVG_KEY_TEXT_FONT_SIZE;
+                keyText.setAttribute('text-anchor', 'middle');
+
+                if (!isBlackKey) {
+                    keyRect.setAttribute('x', whiteKeyIndex * WHITE_KEY_WIDTH + whiteKeyBorderOffset);
+                    keyRect.setAttribute('y', whiteKeyBorderOffset);
+                    keyRect.setAttribute('width', WHITE_KEY_WIDTH - whiteKeyBorderOffset);
+                    keyRect.setAttribute('height', WHITE_KEY_HEIGHT);
+                    keyRect.classList.add('white');
+
+                    keyText.setAttribute('x', whiteKeyIndex * WHITE_KEY_WIDTH + WHITE_KEY_WIDTH/2 + whiteKeyBorderOffset);
+                    keyText.setAttribute('y', WHITE_KEY_HEIGHT - KEY_TEXT_Y_OFFSET + whiteKeyBorderOffset);
+                    whiteKeysGroup.appendChild(keyRect);
+                    whiteKeysGroup.appendChild(keyText);
+                    whiteKeyIndex++;
+                } else {
+                    const prevWhiteKeyX = (whiteKeyIndex - 1) * WHITE_KEY_WIDTH;
+                    keyRect.setAttribute('x', prevWhiteKeyX + WHITE_KEY_WIDTH - BLACK_KEY_WIDTH/2 + whiteKeyBorderOffset);
+                    keyRect.setAttribute('y', whiteKeyBorderOffset);
+                    keyRect.setAttribute('width', BLACK_KEY_WIDTH);
+                    keyRect.setAttribute('height', BLACK_KEY_HEIGHT);
+                    keyRect.classList.add('black');
+
+                    keyText.setAttribute('x', prevWhiteKeyX + WHITE_KEY_WIDTH + whiteKeyBorderOffset);
+                    keyText.setAttribute('y', BLACK_KEY_HEIGHT - KEY_TEXT_Y_OFFSET + whiteKeyBorderOffset);
+                    blackKeysGroup.appendChild(keyRect);
+                    blackKeysGroup.appendChild(keyText);
+                }
+
+                // Add click listener for interactive editing
+                keyRect.addEventListener('click', (e) => {
+                    const note = parseInt(e.target.dataset.note);
+                    toggleNoteOnAdminPiano(note);
+                });
+            }
+            svg.appendChild(whiteKeysGroup);
+            svg.appendChild(blackKeysGroup);
+            pianoContainer.appendChild(svg);
+        }
+
+        function toggleNoteOnAdminPiano(midiNote) {
+            const index = adminPianoNotes.indexOf(midiNote);
+            if (index > -1) {
+                adminPianoNotes.splice(index, 1); // Remove
+            } else {
+                adminPianoNotes.push(midiNote); // Add
+            }
+            adminPianoNotes.sort((a, b) => a - b); // Keep sorted
+            updateAdminPianoDisplay();
+        }
+
+        function updateAdminPianoDisplay() {
+            const pianoId = 'admin-piano-container';
+            // Deactivate all keys first
+            for (let note = PIANO_START_NOTE; note <= PIANO_END_NOTE; note++) {
+                const keyElement = pianoKeyElements[pianoId]?.[note];
+                if (keyElement) keyElement.classList.remove('active');
+            }
+            // Activate current notes
+            adminPianoNotes.forEach(note => {
+                const keyElement = pianoKeyElements[pianoId]?.[note];
+                if (keyElement) keyElement.classList.add('active');
+            });
+
+            // Update text displays
+            const chordNotesText = adminPianoNotes.length > 0
+                ? adminPianoNotes.map(getNoteNameFromMIDI).join(' ')
+                : 'No Notes';
+            const chordName = adminPianoNotes.length > 0 && typeof detectChord === 'function'
+                ? detectChord(adminPianoNotes.map(getNoteNameFromMIDI)) || 'Unknown Chord'
+                : '-';
+
+            domElements.adminPianoNotesDisplay.textContent = chordNotesText;
+            domElements.adminPianoChordNameDisplay.textContent = chordName;
+        }
+
+        function loadPianoWithNotes(notes) {
+            adminPianoNotes = [...notes].sort((a,b)=>a-b);
+            updateAdminPianoDisplay();
+        }
+
+        function loadPadToPiano() {
+            if (domElements.storeSelect.value !== 'songs' || !currentLoadedData) {
+                showNotification('Please load a song first.', 'warning');
+                return;
+            }
+            const padNumber = parseInt(domElements.applyPadNumberInput.value);
+            if (isNaN(padNumber) || padNumber < 36 || padNumber > 43) {
+                showNotification('Invalid pad number (36-43).', 'warning');
+                return;
+            }
+            const padData = currentLoadedData.pads?.[padNumber];
+            if (padData && padData.chord && padData.chord.length > 0) {
+                loadPianoWithNotes([...(padData.bass || []), ...padData.chord]);
+                showNotification(`Loaded Pad ${padNumber} to piano.`, 'info');
+            } else {
+                showNotification(`Pad ${padNumber} is empty.`, 'warning');
+                loadPianoWithNotes([]); // Clear piano if pad is empty
+            }
+        }
+
+        function applyPianoToPad() {
+            if (domElements.storeSelect.value !== 'songs' || !currentLoadedData) {
+                showNotification('Please load a song first.', 'warning');
+                return;
+            }
+            const padNumber = parseInt(domElements.applyPadNumberInput.value);
+            if (isNaN(padNumber) || padNumber < 36 || padNumber > 43) {
+                showNotification('Invalid pad number (36-43).', 'warning');
+                return;
+            }
+
+            if (!currentLoadedData.pads) currentLoadedData.pads = {};
+            // Assuming we only store the 'chord' part in the pad, bass notes are typically separate.
+            // For simplicity, we'll store all current piano notes as the 'chord'.
+            // If the structure needs to differentiate bass/chord within the pad,
+            // this logic needs to be more complex (e.g., lowest note is bass).
+            currentLoadedData.pads[padNumber] = { chord: [...adminPianoNotes] };
+            showNotification(`Applied piano notes to Pad ${padNumber}.`, 'success');
+            debouncedSaveEntry();
+        }
+
+        function loadSequenceStepToPiano() {
+            if (domElements.storeSelect.value !== 'songs' || !currentLoadedData) {
+                showNotification('Please load a song first.', 'warning');
+                return;
+            }
+            const stepIndex = parseInt(domElements.applySequenceIndexInput.value) - 1; // UI is 1-based
+            if (isNaN(stepIndex) || stepIndex < 0 || stepIndex >= (currentLoadedData.sequence?.length || 0)) {
+                showNotification(`Invalid sequence step index (1-${currentLoadedData.sequence?.length || 0}).`, 'warning');
+                return;
+            }
+            const step = currentLoadedData.sequence[stepIndex];
+            let notesToLoad = [];
+            if (Array.isArray(step)) { // Live recorded notes
+                notesToLoad = step;
+            } else if (typeof step === 'number' && currentLoadedData.pads?.[step]?.chord) { // Pad reference
+                notesToLoad = [...(currentLoadedData.pads[step].bass || []), ...currentLoadedData.pads[step].chord];
+            } else {
+                showNotification(`Sequence step ${stepIndex + 1} is empty or invalid.`, 'warning');
+            }
+            loadPianoWithNotes(notesToLoad);
+            showNotification(`Loaded Sequence Step ${stepIndex + 1} to piano.`, 'info');
+        }
+
+        function applyPianoToSequenceStep() {
+            if (domElements.storeSelect.value !== 'songs' || !currentLoadedData) {
+                showNotification('Please load a song first.', 'warning');
+                return;
+            }
+            const stepIndex = parseInt(domElements.applySequenceIndexInput.value) - 1; // UI is 1-based
+
+            if (!currentLoadedData.sequence) currentLoadedData.sequence = [];
+
+            if (isNaN(stepIndex) || stepIndex < 0 || stepIndex > currentLoadedData.sequence.length) {
+                showNotification(`Invalid sequence step index. Must be 1 to ${currentLoadedData.sequence.length + 1}.`, 'warning');
+                return;
+            }
+
+            if (adminPianoNotes.length === 0) {
+                showNotification('Piano is empty. Cannot save empty step.', 'warning');
+                return;
+            }
+
+            if (stepIndex === currentLoadedData.sequence.length) { // Adding a new step
+                currentLoadedData.sequence.push([...adminPianoNotes]);
+                showNotification(`Added new step ${stepIndex + 1} to sequence.`, 'success');
+            } else { // Overwriting existing step
+                currentLoadedData.sequence[stepIndex] = [...adminPianoNotes];
+                showNotification(`Overwrote step ${stepIndex + 1} in sequence.`, 'success');
+            }
+            debouncedSaveEntry();
+        }
+
         // --- UI Rendering Functions ---
         function renderForm(storeName, data = {}) {
-            const formContainer = document.getElementById('dataEntryForm');
-            formContainer.innerHTML = ''; // Clear previous form
+            domElements.dataEntryForm.innerHTML = ''; // Clear previous form
+            domElements.adminPianoSection.style.display = 'none'; // Hide piano by default
 
             let formHtml = '';
+            currentLoadedData = data; // Cache the loaded data
 
             if (storeName === 'songs') {
                 const songId = data.id || generateUUID();
+                currentLoadedKey = songId; // Set current key
+
                 formHtml = `
                     <h2>Song Details</h2>
                     <div class="form-group">
@@ -208,82 +779,108 @@
                         <label for="songName">Song Name:</label>
                         <input type="text" id="songName" value="${data.name || ''}" placeholder="Enter song name" />
                     </div>
+                    <div class="form-group">
+                        <label for="songNotes">Song Notes & Ideas:</label>
+                        <textarea id="songNotes" placeholder="Write your notes, lyrics, or ideas...">${data.notes || ''}</textarea>
+                    </div>
                     <div class="form-group json-editor-container">
                         <label for="songSequence">Sequence JSON:</label>
-                        <textarea id="songSequence" placeholder="Enter sequence as JSON array (e.g., [[60,64,67], 'pad1'])">${JSON.stringify(data.sequence || [], null, 2)}</textarea>
+                        <textarea id="songSequence" placeholder="Enter sequence as JSON array (e.g., [[60,64,67], 36])">${JSON.stringify(data.sequence || [], null, 2)}</textarea>
                         <button onclick="formatAndValidateJsonField('songSequence')">Format & Validate</button>
                     </div>
                     <div class="form-group json-editor-container">
                         <label for="songPads">Pads JSON:</label>
-                        <textarea id="songPads" placeholder="Enter pads as JSON object (e.g., {'pad1': {chord: [60,64,67], bass: [36]}})">${JSON.stringify(data.pads || {}, null, 2)}</textarea>
+                        <textarea id="songPads" placeholder="Enter pads as JSON object (e.g., {'36': {chord: [60,64,67], bass: [36]}})">${JSON.stringify(data.pads || {}, null, 2)}</textarea>
                         <button onclick="formatAndValidateJsonField('songPads')">Format & Validate</button>
                     </div>
                 `;
+                domElements.dataEntryForm.innerHTML = formHtml;
+                domElements.adminPianoSection.style.display = 'block'; // Show piano for songs
+
+                // Cache the notes textarea and attach auto-save
+                domElements.songNotesTextarea = document.getElementById('songNotes');
+                if (domElements.songNotesTextarea) {
+                    domElements.songNotesTextarea.addEventListener('input', debouncedSaveEntry);
+                }
+
+                // Attach auto-save to JSON textareas
+                document.getElementById('songSequence').addEventListener('input', debouncedSaveEntry);
+                document.getElementById('songPads').addEventListener('input', debouncedSaveEntry);
+
+
+                loadPianoWithNotes([]); // Clear admin piano for new load
             } else if (storeName === 'ports') {
-                const portData = data.midiConfig || {
-                    inputName: "",
-                    outputNames: { main: "", bass: "", chord: "", string: "" },
-                    channels: { input: 0, main: 0, bass: 0, chord: 0, string: 0 }
+                currentLoadedKey = 'current'; // Fixed key for ports
+                const portData = data.channels || {
+                    input: null,
+                    main: null, bass: null, chord: null, string: null
                 };
+                const outputIds = data.outputs || {
+                    main: null, bass: null, chord: null, string: null
+                };
+                const inputId = data.input || null;
 
                 formHtml = `
                     <h2>MIDI Port Configuration</h2>
                     <div class="form-group">
-                        <label for="portInputName">Input Port Name:</label>
-                        <input type="text" id="portInputName" value="${portData.inputName || ''}" placeholder="e.g., MPK mini Plus Port 1" />
+                        <label for="portInputId">Input Port ID:</label>
+                        <input type="text" id="portInputId" value="${inputId || ''}" placeholder="e.g., WebMIDIDriver0" />
                     </div>
-                    <h3>Output Ports:</h3>
+                    <h3>Output Port IDs:</h3>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="portOutputMain">Main Output Name:</label>
-                            <input type="text" id="portOutputMain" value="${portData.outputNames.main || ''}" placeholder="e.g., IAC Driver miDiai00" />
+                            <label for="portOutputMain">Main Output ID:</label>
+                            <input type="text" id="portOutputMain" value="${outputIds.main || ''}" placeholder="e.g., WebMIDIDriver1" />
                         </div>
                         <div class="form-group">
-                            <label for="portOutputBass">Bass Output Name:</label>
-                            <input type="text" id="portOutputBass" value="${portData.outputNames.bass || ''}" placeholder="e.g., IAC Driver miDiai02" />
+                            <label for="portOutputBass">Bass Output ID:</label>
+                            <input type="text" id="portOutputBass" value="${outputIds.bass || ''}" placeholder="e.g., WebMIDIDriver2" />
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="portOutputChord">Chord Output Name:</label>
-                            <input type="text" id="portOutputChord" value="${portData.outputNames.chord || ''}" placeholder="e.g., IAC Driver miDiai01" />
+                            <label for="portOutputChord">Chord Output ID:</label>
+                            <input type="text" id="portOutputChord" value="${outputIds.chord || ''}" placeholder="e.g., WebMIDIDriver3" />
                         </div>
                         <div class="form-group">
-                            <label for="portOutputString">String Output Name:</label>
-                            <input type="text" id="portOutputString" value="${portData.outputNames.string || ''}" placeholder="e.g., IAC Driver miDiai03" />
+                            <label for="portOutputString">String Output ID:</label>
+                            <input type="text" id="portOutputString" value="${outputIds.string || ''}" placeholder="e.g., WebMIDIDriver4" />
                         </div>
                     </div>
                     <h3>Channels (0 for all, 1-16):</h3>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="channelInput">Input Channel:</label>
-                            <input type="number" id="channelInput" value="${portData.channels.input || 0}" min="0" max="16" />
+                            <input type="number" id="channelInput" value="${portData.input || 0}" min="0" max="16" />
                         </div>
                         <div class="form-group">
                             <label for="channelMain">Main Channel:</label>
-                            <input type="number" id="channelMain" value="${portData.channels.main || 0}" min="0" max="16" />
+                            <input type="number" id="channelMain" value="${portData.main || 0}" min="0" max="16" />
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="channelBass">Bass Channel:</label>
-                            <input type="number" id="channelBass" value="${portData.channels.bass || 0}" min="0" max="16" />
+                            <input type="number" id="channelBass" value="${portData.bass || 0}" min="0" max="16" />
                         </div>
                         <div class="form-group">
                             <label for="channelChord">Chord Channel:</label>
-                            <input type="number" id="channelChord" value="${portData.channels.chord || 0}" min="0" max="16" />
+                            <input type="number" id="channelChord" value="${portData.chord || 0}" min="0" max="16" />
                         </div>
                     </div>
                     <div class="form-group">
                         <label for="channelString">String Channel:</label>
-                        <input type="number" id="channelString" value="${portData.channels.string || 0}" min="0" max="16" />
+                        <input type="number" id="channelString" value="${portData.string || 0}" min="0" max="16" />
                     </div>
                 `;
-            }
-            formContainer.innerHTML = formHtml;
+                domElements.dataEntryForm.innerHTML = formHtml;
 
-            // Also update the raw JSON editor
-            document.getElementById('jsonEditor').value = JSON.stringify(data, null, 2);
+                // Attach auto-save to port config fields
+                document.querySelectorAll('#dataEntryForm input').forEach(input => {
+                    input.addEventListener('input', debouncedSaveEntry);
+                });
+            }
+            domElements.jsonEditor.value = JSON.stringify(data, null, 2);
         }
 
         function formatAndValidateJsonField(elementId) {
@@ -291,17 +888,17 @@
             try {
                 const parsed = JSON.parse(textarea.value);
                 textarea.value = JSON.stringify(parsed, null, 2);
-                alert('JSON is valid and formatted!');
+                showNotification('JSON is valid and formatted!', 'success');
             } catch (e) {
-                alert('Invalid JSON: ' + e.message);
+                showNotification('Invalid JSON: ' + e.message, 'error');
             }
         }
 
         // --- Data Handling Functions ---
         async function loadAndRenderEntry() {
-            const storeName = document.getElementById('storeSelect').value;
-            const key = document.getElementById('keySelect').value;
-            currentLoadedKey = key; // Set the current loaded key
+            const storeName = domElements.storeSelect.value;
+            let key = domElements.songSearchInput.value || domElements.keySelect.value; // For ports, use keySelect value
+            if (storeName === 'ports') key = 'current'; // Ports only have one key
 
             if (!key) {
                 renderForm(storeName, {}); // Render an empty form if no key is selected
@@ -319,12 +916,14 @@
 
                 if (data) {
                     renderForm(storeName, data);
+                    currentLoadedKey = key;
+                    showNotification(`Loaded entry: "${key}"`, 'info');
                 } else {
-                    alert(`No data found for key "${key}" in store "${storeName}".`);
+                    showNotification(`No data found for key "${key}" in store "${storeName}".`, 'warning');
                     renderForm(storeName, {}); // Render empty form
                 }
             } catch (error) {
-                alert('Error loading entry: ' + error.message);
+                showNotification('Error loading entry: ' + error.message, 'error');
                 console.error('Error loading entry:', error);
             }
         }
@@ -338,37 +937,34 @@
                 data = {
                     id: key,
                     name: document.getElementById('songName').value,
+                    notes: document.getElementById('songNotes').value,
                 };
                 try {
                     data.sequence = JSON.parse(document.getElementById('songSequence').value);
                 } catch (e) {
-                    alert('Invalid JSON in Sequence field: ' + e.message);
-                    throw e; // Stop save if JSON is invalid
+                    throw new Error('Invalid JSON in Sequence field: ' + e.message); // Throw to stop save
                 }
                 try {
                     data.pads = JSON.parse(document.getElementById('songPads').value);
                 } catch (e) {
-                    alert('Invalid JSON in Pads field: ' + e.message);
-                    throw e; // Stop save if JSON is invalid
+                    throw new Error('Invalid JSON in Pads field: ' + e.message); // Throw to stop save
                 }
             } else if (storeName === 'ports') {
-                key = 'midi_config'; // Ports store typically has a single fixed key
+                key = 'current'; // Ports store typically has a single fixed key
                 data = {
-                    midiConfig: {
-                        inputName: document.getElementById('portInputName').value,
-                        outputNames: {
-                            main: document.getElementById('portOutputMain').value,
-                            bass: document.getElementById('portOutputBass').value,
-                            chord: document.getElementById('portOutputChord').value,
-                            string: document.getElementById('portOutputString').value,
-                        },
-                        channels: {
-                            input: parseInt(document.getElementById('channelInput').value, 10),
-                            main: parseInt(document.getElementById('channelMain').value, 10),
-                            bass: parseInt(document.getElementById('channelBass').value, 10),
-                            chord: parseInt(document.getElementById('channelChord').value, 10),
-                            string: parseInt(document.getElementById('channelString').value, 10),
-                        }
+                    input: document.getElementById('portInputId').value,
+                    outputs: {
+                        main: document.getElementById('portOutputMain').value,
+                        bass: document.getElementById('portOutputBass').value,
+                        chord: document.getElementById('portOutputChord').value,
+                        string: document.getElementById('portOutputString').value,
+                    },
+                    channels: {
+                        input: parseInt(document.getElementById('channelInput').value, 10),
+                        main: parseInt(document.getElementById('channelMain').value, 10),
+                        bass: parseInt(document.getElementById('channelBass').value, 10),
+                        chord: parseInt(document.getElementById('channelChord').value, 10),
+                        string: parseInt(document.getElementById('channelString').value, 10),
                     }
                 };
             }
@@ -376,42 +972,35 @@
         }
 
         async function collectAndSaveEntry() {
-            const storeName = document.getElementById('storeSelect').value;
+            const storeName = domElements.storeSelect.value;
             try {
                 const { data, key } = collectFormData(storeName);
                 if (!key) {
-                    alert('Cannot save: A key must be specified for the entry.');
+                    showNotification('Cannot save: A key must be specified for the entry.', 'warning');
                     return;
                 }
-                await saveEntry(data, key);
-                alert('✅ Saved successfully!');
-                // After saving, refresh keys and select the saved key
-                await refreshKeys();
-                document.getElementById('keySelect').value = key;
-                await loadAndRenderEntry(); // Reload to ensure display is consistent
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    const request = store.put(data, key);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+                currentLoadedData = data; // Update cached data
+                showNotification('✅ Saved successfully!', 'success');
+                showSaveIndicator();
+                await refreshKeys(); // Re-populate search suggestions if song was created/renamed
             } catch (error) {
-                alert('❌ Failed to save entry: ' + error.message);
+                showNotification('❌ Failed to save entry: ' + error.message, 'error');
                 console.error('Save error:', error);
             }
         }
 
-        // Modified saveEntry to accept data and key directly
-        async function saveEntry(data, key) {
-            const storeName = document.getElementById('storeSelect').value;
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(storeName, 'readwrite');
-                const store = tx.objectStore(storeName);
-                const request = store.put(data, key);
-                request.onsuccess = () => resolve();
-                request.onerror = () => reject(request.error);
-            });
-        }
-
         async function deleteEntry() {
-            const storeName = document.getElementById('storeSelect').value;
-            const key = document.getElementById('keySelect').value;
-            if (!key) {
-                alert('No entry selected to delete.');
+            const storeName = domElements.storeSelect.value;
+            const key = currentLoadedKey;
+            if (!key || (storeName === 'ports' && key !== 'current')) { // Ensure 'ports' delete only applies to 'current'
+                showNotification('No entry selected to delete, or invalid key for this store.', 'warning');
                 return;
             }
             if (!confirm(`Delete key "${key}" from ${storeName}?`)) return;
@@ -424,60 +1013,64 @@
                     req.onsuccess = () => resolve();
                     req.onerror = () => reject(req.error);
                 });
-                alert('🗑 Deleted');
+                showNotification('🗑 Deleted', 'info');
+                currentLoadedKey = null;
+                currentLoadedData = null;
                 await refreshKeys();
                 renderForm(storeName, {}); // Clear form after deletion
             } catch (error) {
-                alert('❌ Failed to delete entry: ' + error.message);
+                showNotification('❌ Failed to delete entry: ' + error.message, 'error');
                 console.error('Delete error:', error);
             }
         }
 
         async function refreshKeys() {
-            const storeName = document.getElementById('storeSelect').value;
-            const keySelect = document.getElementById('keySelect');
-            keySelect.innerHTML = ''; // Clear existing options
+            const storeName = domElements.storeSelect.value;
+            domElements.songSuggestions.innerHTML = '';
+            domElements.songSearchInput.value = '';
+            domElements.keySelect.innerHTML = ''; // Clear port key select
+            domElements.keySelect.style.display = 'none'; // Hide by default
 
-            try {
-                const tx = db.transaction(storeName, 'readonly');
-                const store = tx.objectStore(storeName);
-                const keys = await new Promise((resolve, reject) => {
-                    const req = store.getAllKeys();
-                    req.onsuccess = () => resolve(req.result);
-                    req.onerror = () => reject(req.error);
-                });
-
-                if (keys.length === 0) {
-                    const opt = document.createElement('option');
-                    opt.value = '';
-                    opt.textContent = 'No entries';
-                    keySelect.appendChild(opt);
-                    currentLoadedKey = null;
-                    renderForm(storeName, {}); // Render empty form when no keys
-                } else {
-                    keys.forEach(k => {
-                        const opt = document.createElement('option');
-                        opt.value = k;
-                        opt.textContent = k;
-                        keySelect.appendChild(opt);
-                    });
-                    // Automatically select the first key or the previously loaded one
-                    if (currentLoadedKey && keys.includes(currentLoadedKey)) {
-                        keySelect.value = currentLoadedKey;
-                    } else {
-                        keySelect.value = keys[0]; // Select the first key
-                        currentLoadedKey = keys[0];
-                    }
-                    await loadAndRenderEntry(); // Load data for the selected key
-                }
-            } catch (error) {
-                alert('Error refreshing keys: ' + error.message);
-                console.error('Error refreshing keys:', error);
+            if (storeName === 'songs') {
+                domElements.songSearchInput.style.display = 'inline-block';
+                allSongNames = await getAllSongKeysAndNames(); // Get keys and names
+                filterAndDisplaySuggestions(); // Populate initial suggestions
+            } else { // ports store
+                domElements.songSearchInput.style.display = 'none';
+                domElements.keySelect.style.display = 'inline-block';
+                const opt = document.createElement('option');
+                opt.value = 'current';
+                opt.textContent = 'current';
+                domElements.keySelect.appendChild(opt);
+                domElements.keySelect.value = 'current';
+                currentLoadedKey = 'current';
+                await loadAndRenderEntry(); // Load the 'current' port config
             }
         }
 
+        async function getAllSongKeysAndNames() {
+            if (!db) await initDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('songs', 'readonly');
+                const store = tx.objectStore('songs');
+                const request = store.openCursor();
+                const results = [];
+                request.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        results.push({ key: cursor.key, name: cursor.value.name || cursor.key });
+                        cursor.continue();
+                    } else {
+                        resolve(results);
+                    }
+                };
+                request.onerror = (event) => reject(event.target.error);
+            });
+        }
+
+
         function createNewEntry() {
-            const storeName = document.getElementById('storeSelect').value;
+            const storeName = domElements.storeSelect.value;
             let newKey;
             let defaultData = {};
 
@@ -487,48 +1080,42 @@
                     id: newKey,
                     name: `New Song ${new Date().toLocaleDateString()}`,
                     sequence: [],
-                    pads: {}
+                    pads: {},
+                    notes: ''
                 };
+                renderForm(storeName, defaultData);
+                currentLoadedKey = newKey; // Set the current loaded key
+                domElements.songSearchInput.value = defaultData.name;
+                filterAndDisplaySuggestions(); // Update search input
+                showNotification(`New song "${defaultData.name}" created.`, 'info');
             } else if (storeName === 'ports') {
-                newKey = 'midi_config'; // Fixed key for ports
-                defaultData = {
-                    midiConfig: {
-                        inputName: "Default Input",
-                        outputNames: { main: "Default Main", bass: "Default Bass", chord: "Default Chord", string: "Default String" },
-                        channels: { input: 0, main: 0, bass: 0, chord: 0, string: 0 }
-                    }
+                newKey = 'current'; // Fixed key for ports
+                defaultData = { // Default structure to render
+                    input: "", outputs: { main: "", bass: "", chord: "", string: "" },
+                    channels: { input: 0, main: 0, bass: 0, chord: 0, string: 0 }
                 };
+                renderForm(storeName, defaultData);
+                currentLoadedKey = newKey;
+                showNotification('Initialized default port configuration. Save to persist.', 'info');
             }
-
-            renderForm(storeName, defaultData);
-            currentLoadedKey = newKey; // Set the current loaded key
-            // Add or select the new key in the dropdown, if applicable
-            const keySelect = document.getElementById('keySelect');
-            if (storeName === 'songs') { // For songs, keys are dynamic UUIDs
-                const opt = document.createElement('option');
-                opt.value = newKey;
-                opt.textContent = `(New) ${defaultData.name || newKey.substring(0, 8)}`;
-                keySelect.appendChild(opt);
-            }
-            keySelect.value = newKey; // Select the new key in the dropdown
         }
-
 
         // --- Raw JSON Import/Export Functions ---
         function downloadJSON() {
-            const json = document.getElementById('jsonEditor').value;
+            const json = domElements.jsonEditor.value;
             if (!json) {
-                alert('No data to export. Load or create an entry first.');
+                showNotification('No data to export. Load or create an entry first.', 'warning');
                 return;
             }
             const blob = new Blob([json], { type: 'application/json' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            const key = document.getElementById('keySelect').value || 'exported_data';
-            const storeName = document.getElementById('storeSelect').value;
+            const key = currentLoadedKey || 'exported_data';
+            const storeName = domElements.storeSelect.value;
             a.download = `${storeName}_${key}.json`;
             a.click();
             URL.revokeObjectURL(a.href); // Clean up
+            showNotification('JSON exported.', 'success');
         }
 
         function importJSON(event) {
@@ -539,54 +1126,48 @@
             reader.onload = async e => {
                 try {
                     const importedData = JSON.parse(e.target.result);
-                    document.getElementById('jsonEditor').value = JSON.stringify(importedData, null, 2); // Show in raw editor
+                    domElements.jsonEditor.value = JSON.stringify(importedData, null, 2); // Show in raw editor
 
-                    const storeName = document.getElementById('storeSelect').value;
+                    const storeName = domElements.storeSelect.value;
                     let keyToSave;
 
                     if (storeName === 'songs') {
                         if (!importedData.id) {
-                            alert('Imported song JSON must have an "id" field.');
+                            showNotification('Imported song JSON must have an "id" field.', 'error');
                             return;
                         }
                         keyToSave = importedData.id;
                     } else if (storeName === 'ports') {
-                        keyToSave = 'midi_config'; // Fixed key for ports
-                        if (!importedData.midiConfig) {
-                            alert('Imported ports JSON must have a "midiConfig" field.');
-                            return;
-                        }
+                        keyToSave = 'current'; // Fixed key for ports
                     } else {
-                        alert('Unknown store type for import.');
+                        showNotification('Unknown store type for import.', 'error');
                         return;
                     }
 
-                    // Ask user if they want to load into form or directly save
                     const confirmLoad = confirm('Imported JSON is loaded into the raw editor. Do you want to load it into the form editor for review/modification (OK) or save it directly to the database (Cancel)?');
 
                     if (confirmLoad) {
                         currentLoadedKey = keyToSave;
                         renderForm(storeName, importedData);
-                        // Update keySelect to show the imported key, if it's a song
                         if (storeName === 'songs') {
-                            const keySelect = document.getElementById('keySelect');
-                            if (!Array.from(keySelect.options).some(opt => opt.value === keyToSave)) {
-                                const opt = document.createElement('option');
-                                opt.value = keyToSave;
-                                opt.textContent = importedData.name || keyToSave;
-                                keySelect.appendChild(opt);
-                            }
-                            keySelect.value = keyToSave;
+                            domElements.songSearchInput.value = importedData.name || importedData.id;
+                            filterAndDisplaySuggestions(); // Update search input
                         }
                     } else {
                         // Directly save from imported JSON
-                        await saveEntry(importedData, keyToSave);
-                        alert('✅ JSON imported and saved directly!');
+                        await new Promise((resolve, reject) => {
+                            const tx = db.transaction(storeName, 'readwrite');
+                            const store = tx.objectStore(storeName);
+                            const request = store.put(importedData, keyToSave);
+                            request.onsuccess = () => resolve();
+                            request.onerror = () => reject(request.error);
+                        });
+                        showNotification('✅ JSON imported and saved directly!', 'success');
                         await refreshKeys(); // Update dropdown and form
                     }
 
                 } catch (error) {
-                    alert('Failed to import JSON: ' + error.message);
+                    showNotification('Failed to import JSON: ' + error.message, 'error');
                     console.error('JSON import error:', error);
                 } finally {
                     event.target.value = ''; // Clear file input
@@ -595,20 +1176,108 @@
             reader.readAsText(file);
         }
 
+        // --- Search/Suggestion Logic ---
+        let activeSuggestionIndex = -1;
+
+        function filterAndDisplaySuggestions() {
+            const query = domElements.songSearchInput.value.toLowerCase();
+            domElements.songSuggestions.innerHTML = '';
+            activeSuggestionIndex = -1;
+
+            if (query.length < 2) { // Show all if query is short
+                domElements.songSuggestions.style.display = 'none';
+                return;
+            }
+
+            const filteredSongs = allSongNames.filter(song =>
+                song.name.toLowerCase().includes(query) || song.key.toLowerCase().includes(query)
+            );
+
+            if (filteredSongs.length > 0) {
+                filteredSongs.forEach((song, index) => {
+                    const div = document.createElement('div');
+                    div.classList.add('suggestion-item');
+                    div.textContent = `${song.name} (${song.key.substring(0, 8)}...)`;
+                    div.dataset.key = song.key;
+                    div.addEventListener('click', () => selectSuggestion(song.key, song.name));
+                    domElements.songSuggestions.appendChild(div);
+                });
+                domElements.songSuggestions.style.display = 'block';
+            } else {
+                domElements.songSuggestions.style.display = 'none';
+            }
+        }
+
+        async function selectSuggestion(key, name = null) {
+            domElements.songSearchInput.value = name || key;
+            domElements.songSuggestions.style.display = 'none';
+            currentLoadedKey = key;
+            await loadAndRenderEntry();
+        }
+
+        function highlightSuggestion(index) {
+            const items = domElements.songSuggestions.querySelectorAll('.suggestion-item');
+            if (items.length === 0) return;
+
+            items.forEach(item => item.classList.remove('active-suggestion'));
+
+            if (index >= 0 && index < items.length) {
+                items[index].classList.add('active-suggestion');
+                items[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+        }
+
         // --- Event Listeners and Initialization ---
         document.getElementById('storeSelect').addEventListener('change', async () => {
             currentLoadedKey = null; // Reset loaded key on store change
+            currentLoadedData = null;
             await refreshKeys();
         });
 
-        document.getElementById('keySelect').addEventListener('change', loadAndRenderEntry);
+        domElements.songSearchInput.addEventListener('input', filterAndDisplaySuggestions);
+        domElements.songSearchInput.addEventListener('focus', filterAndDisplaySuggestions); // Show suggestions on focus
+        domElements.songSearchInput.addEventListener('blur', () => {
+            // Delay hiding suggestions to allow click events to register
+            setTimeout(() => {
+                domElements.songSuggestions.style.display = 'none';
+            }, 100);
+        });
 
+        domElements.songSearchInput.addEventListener('keydown', (e) => {
+            const items = domElements.songSuggestions.querySelectorAll('.suggestion-item');
+            if (items.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeSuggestionIndex = (activeSuggestionIndex + 1) % items.length;
+                highlightSuggestion(activeSuggestionIndex);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeSuggestionIndex = (activeSuggestionIndex - 1 + items.length) % items.length;
+                highlightSuggestion(activeSuggestionIndex);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (activeSuggestionIndex > -1) {
+                    const selectedItem = items[activeSuggestionIndex];
+                    selectSuggestion(selectedItem.dataset.key, selectedItem.textContent.split(' (')[0]);
+                } else if (domElements.songSearchInput.value) { // If no suggestion selected, but text is entered
+                    loadAndRenderEntry(); // Try to load based on current input value
+                }
+            } else if (e.key === 'Escape') {
+                domElements.songSuggestions.style.display = 'none';
+                activeSuggestionIndex = -1;
+            }
+        });
+
+        // Initialize on DOM Content Loaded
         window.addEventListener('DOMContentLoaded', async () => {
+            cacheDOMElements(); // Must cache first
+            createAdminPianoSVG(); // Create the interactive piano once
             try {
                 await initDB();
                 await refreshKeys(); // Initial load of keys and form
             } catch (err) {
-                alert('❌ Failed to open IndexedDB. Please ensure your browser supports it and it is not blocked: ' + err.message);
+                showNotification('❌ Failed to open IndexedDB. Please ensure your browser supports it and it is not blocked: ' + err.message, 'error');
                 console.error('IndexedDB init error:', err);
             }
         });
