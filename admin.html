@@ -1,146 +1,47 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>reChord Admin Editor</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <style>
-        body {
-            font-family: sans-serif;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        h1, h2 {
-            margin-top: 0;
-            color: #333;
-        }
-        select, button, input, textarea {
-            font-size: 16px;
-            padding: 8px 12px;
-            margin: 5px 0;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        button {
-            background: #007bff;
-            color: white;
-            border: none;
-            cursor: pointer;
-            transition: background 0.2s ease-in-out;
-        }
-        button:hover {
-            background: #0056b3;
-        }
-        .pad-list button {
-            margin: 2px;
-            padding: 10px;
-            background: #007bff;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-        .pad-list button.active {
-            background: #0056b3;
-            box-shadow: inset 0 0 5px rgba(0,0,0,0.3);
-        }
-        .piano-container {
-            display: flex;
-            overflow-x: auto; /* Allow scrolling for wide pianos */
-            border: 1px solid #ddd;
-            padding: 10px;
-            background-color: #fff;
-            margin-top: 10px;
-            position: relative;
-            min-height: 150px; /* Ensure visibility even when empty */
-        }
-        .piano-key {
-            position: absolute;
-            border: 1px solid #333;
-            cursor: pointer;
-            box-sizing: border-box;
-            user-select: none;
-            display: flex;
-            justify-content: center;
-            align-items: flex-end;
-            font-size: 10px;
-            padding-bottom: 5px;
-            z-index: 1; /* White keys behind black keys */
-        }
-        .white-key {
-            background: white;
-            width: 40px;
-            height: 120px;
-            margin-left: -1px; /* Overlap borders */
-            z-index: 0;
-        }
-        .black-key {
-            background: #333;
-            color: white;
-            width: 25px;
-            height: 80px;
-            margin-left: -12.5px; /* Position half its width over the previous white key */
-            z-index: 1;
-        }
-        .key-text {
-            position: absolute;
-            bottom: 5px; /* Adjust as needed */
-            text-align: center;
-            width: 100%;
-            pointer-events: none; /* Allow clicks to pass through text to the key */
-        }
-        .piano-key.active {
-            background: #4caf50; /* Green for selected */
-            color: white;
-        }
-        .piano-key.active.black-key {
-            background: #2e7d32; /* Darker green for active black key */
-        }
-        .notes-area {
-            width: 100%;
-            height: 100px;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            resize: vertical;
-            font-family: monospace;
-        }
-        #chordNameDisplay {
-            margin-left: 10px;
-            font-weight: bold;
-            color: #0056b3;
-        }
-        .song-management {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-    </style>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>🎼 reChord Admin Editor</h1>
-
-    <div class="song-management">
-        <h2>Choose a Song</h2>
-        <select id="songSelector"></select>
-        <input type="text" id="newSongName" placeholder="New song name">
-        <button id="createNewSong">➕ New Song</button>
+    <div id="notification-area"></div>
+    <div id="main">
+        <h1 class="page-title">reChord Admin Editor</h1>
+        <p class="tagline">Actual Intelligence In Harmony</p>
     </div>
 
-    <h2>Notes / Ideas</h2>
-    <textarea id="songNotes" class="notes-area" placeholder="Write your song ideas here..."></textarea>
+    <div class="top-card">
+        <div class="song-management">
+            <h2>Choose a Song</h2>
+            <select id="songSelector"></select>
+            <input type="text" id="newSongName" placeholder="New song name">
+            <button id="createNewSong">➕ New Song</button>
+        </div>
+    </div>
 
-    <h2>Pad Chords</h2>
-    <div class="pad-list" id="padList"></div>
+    <div class="piano-section">
+        <h2>Pad Chords</h2>
+        <div class="pad-chords-grid" id="padList"></div>
+    </div>
 
-    <h2>Chord Editor <span id="chordNameDisplay"></span></h2>
-    <div class="piano-container" id="pianoContainer"></div>
-    <button id="savePad">💾 Save Pad</button>
+    <div class="piano-section">
+        <h2>Chord Editor <span id="chordNameDisplay"></span></h2>
+        <div class="piano-container" id="pianoContainer"></div>
+    </div>
 
-    <br><br>
-    <button id="exportJSON">⬇ Export Song</button>
-    <input type="file" id="importJSON" accept=".json">
+    <div class="piano-section">
+        <h2>Notes / Ideas</h2>
+        <textarea id="songNotes" class="notes-area" placeholder="Write your song ideas here..."></textarea>
+    </div>
+
+    <div class="controls">
+        <button id="exportJSON">⬇ Export Song</button>
+        <input type="file" id="importJSON" accept=".json">
+    </div>
 
     <script>
         // === Constants ===
@@ -176,11 +77,9 @@
 
         function normalizeNotesForDetection(notes) {
             const getPitchClass = note => {
-                // Handle MIDI note numbers directly if passed
                 if (typeof note === 'number') {
                     return NOTE_NAMES[note % OCTAVE_SEMITONES];
                 }
-                // Otherwise assume string format like 'C3' or 'C#'
                 return note.replace(/[0-9]/g, '').toUpperCase();
             };
             const semitones = notes.map(n => NOTE_TO_SEMITONE[getPitchClass(n)]);
@@ -209,13 +108,12 @@
                 const chordName = matchChord(intervals);
                 if (chordName) {
                     const rootNote = Object.keys(NOTE_TO_SEMITONE)
-                        .find(k => NOTE_TO_SEMITONE[k] === root && !k.includes('b') && k.length <= 2); // Prefer non-flat, simple names
+                        .find(k => NOTE_TO_SEMITONE[k] === root && !k.includes('b') && k.length <= 2);
                     return `${rootNote} ${chordName}`;
                 }
             }
             return 'Unknown Chord';
         }
-        // End of chord-name-detector.js
 
         function getNoteNameFromMIDI(midiNote) {
             const octave = Math.floor(midiNote / OCTAVE_SEMITONES) - 1;
@@ -223,252 +121,448 @@
             return `${noteName}${octave}`;
         }
 
-        // Database constants
+        // Database constants - match index.html
         const DB_NAME = 'ChordDB';
-        const DB_VERSION = 2; // Keep consistent with main app
+        const DB_VERSION = 2;
+        const STORE_NAME_SONGS = 'songs';
+        const STORE_NAME_PORTS = 'ports';
         let db;
         let currentSong = null;
         let currentPad = null;
         let selectedNotes = [];
 
-        // Piano key range (e.g., C3 to C5, matching your original noteRange)
-        // You can adjust this range if you need more keys in the editor
-        const PIANO_START_MIDI = 48; // C3
-        const PIANO_END_MIDI = 72;   // C5 (inclusive)
+        // Piano key range (matching index.html)
+        const PIANO_START_MIDI = 21; // A0
+        const PIANO_END_MIDI = 108;  // C8
 
-        const WHITE_KEY_WIDTH = 40;
-        const BLACK_KEY_WIDTH = 25;
-        const BLACK_KEY_OFFSET_X = -12.5; // Half of black key width to center it over the split
+        const WHITE_KEY_WIDTH = 24;
+        const WHITE_KEY_HEIGHT = 100;
+        const BLACK_KEY_WIDTH = 16;
+        const BLACK_KEY_HEIGHT = 50;
 
-        const blackKeys = [1, 3, 6, 8, 10]; // Semitone positions (C# D# F# G# A#)
+        // Semitone positions for black keys relative to C (0-11)
+        const BLACK_KEY_SEMITONES = [1, 3, 6, 8, 10]; // C#, D#, F#, G#, A#
 
-        function openDB() {
+        // Add SVG constants
+        const SVG_KEY_STROKE_WIDTH = 1;
+        const SVG_KEY_TEXT_FONT_SIZE = "8px";
+        const KEY_TEXT_Y_OFFSET = 5;
+
+        function getSongNameFromHash() {
+            const hash = window.location.hash.substring(1);
+            return hash ? decodeURIComponent(hash.startsWith('song=') ? hash.split('=')[1] : hash) : 'default';
+        }
+
+        async function openDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open(DB_NAME, DB_VERSION);
-                request.onerror = () => {
-                    console.error('Failed to open DB:', request.error);
-                    reject('Failed to open DB');
+                request.onerror = (event) => {
+                    console.error('Error opening database', event.target.error);
+                    reject('Error opening database: ' + event.target.error.message);
                 };
                 request.onsuccess = () => {
                     db = request.result;
                     resolve();
                 };
-                request.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains('songs')) {
-                        db.createObjectStore('songs');
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME_SONGS)) {
+                        db.createObjectStore(STORE_NAME_SONGS);
                     }
+                    if (!db.objectStoreNames.contains(STORE_NAME_PORTS)) {
+                        db.createObjectStore(STORE_NAME_PORTS);
+                    }
+                };
+            });
+        }
+
+        async function getAllSongNamesFromDB() {
+            if (!db) await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME_SONGS, 'readonly');
+                const store = tx.objectStore(STORE_NAME_SONGS);
+                const req = store.getAllKeys();
+                req.onsuccess = () => {
+                    resolve(req.result);
+                };
+                req.onerror = (event) => {
+                    console.error('Error getting song names:', event.target.error);
+                    reject(event.target.error);
                 };
             });
         }
 
         async function listSongs() {
+            try {
+                const songNames = await getAllSongNamesFromDB();
+                const songSelector = $('#songSelector');
+                songSelector.empty();
+                
+                if (songNames.length === 0) {
+                    songSelector.append($('<option>', {
+                        value: '',
+                        text: 'No songs available',
+                        disabled: true,
+                        selected: true
+                    }));
+                    return [];
+                }
+
+                songNames.forEach(name => {
+                    songSelector.append($('<option>', {
+                        value: name,
+                        text: name
+                    }));
+                });
+                
+                return songNames;
+            } catch (error) {
+                console.error('Error listing songs:', error);
+                throw error;
+            }
+        }
+
+        async function loadSong(songName) {
+            if (!songName) {
+                console.warn('loadSong called with no song name. Clearing editor.');
+                currentSong = null;
+                $('#songNotes').val('');
+                $('#padList').empty();
+                $('#chordNameDisplay').text('');
+                return Promise.resolve();
+            }
+
             return new Promise((resolve, reject) => {
-                const tx = db.transaction('songs', 'readonly');
-                const store = tx.objectStore('songs');
-                const req = store.getAll();
+                const tx = db.transaction(STORE_NAME_SONGS, 'readonly');
+                const store = tx.objectStore(STORE_NAME_SONGS);
+                const req = store.get(songName);
+                
                 req.onsuccess = () => {
-                    const songs = req.result;
-                    $('#songSelector').empty();
-                    if (songs.length === 0) {
-                        $('#songSelector').append('<option value="">No songs found</option>');
+                    const songData = req.result;
+                    if (songData) {
+                        currentSong = {
+                            name: songName,
+                            notes: songData.notes || '',
+                            pads: songData.chords || {},
+                            sequence: songData.sequence || []
+                        };
+                        
+                        $('#songNotes').val(currentSong.notes || '');
+                        renderPadList();
+                        $('#chordNameDisplay').text('');
+                        resolve();
+                    } else {
+                        console.warn(`Song "${songName}" not found.`);
                         currentSong = null;
                         $('#songNotes').val('');
                         $('#padList').empty();
-                        clearPiano();
-                        resolve(false); // Indicate no songs found
-                        return;
+                        $('#chordNameDisplay').text('');
+                        $('#songSelector').val('');
+                        reject(`Song "${songName}" not found.`);
                     }
-
-                    songs.forEach(song => {
-                        $('#songSelector').append(`<option value="${song.id}">${song.name || song.id}</option>`);
-                    });
-
-                    // Load the first song by default or keep current selection if it exists
-                    const selectedId = $('#songSelector').val();
-                    if (selectedId) {
-                        loadSong(selectedId);
-                    } else if (songs.length > 0) {
-                        loadSong(songs[0].id);
-                        $('#songSelector').val(songs[0].id);
-                    }
-                    resolve(true); // Indicate songs were loaded
                 };
-                req.onerror = () => {
-                    console.error('Error listing songs:', req.error);
-                    reject(req.error);
+                
+                req.onerror = (event) => {
+                    console.error('Error loading song:', event.target.error);
+                    reject(event.target.error);
                 };
             });
         }
 
-        async function loadSong(id) {
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction('songs', 'readonly');
-                const store = tx.objectStore('songs');
-                const req = store.get(id);
-                req.onsuccess = () => {
-                    currentSong = req.result;
-                    if (currentSong) {
-                        $('#songNotes').val(currentSong.notes || '');
-                        renderPadList();
-                        clearPiano();
-                        $('#chordNameDisplay').text(''); // Clear chord name
-                        resolve();
-                    } else {
-                        console.warn(`Song with ID ${id} not found.`);
-                        reject(`Song with ID ${id} not found.`);
-                    }
-                };
-                req.onerror = () => {
-                    console.error('Error loading song:', req.error);
-                    reject(req.error);
-                };
-            });
+        // Add notification system
+        const DEFAULT_NOTIFICATION_DURATION = 3000;
+        const NOTIFICATION_FADEOUT_DURATION = 500;
+
+        function showNotification(message, type = 'info', duration = DEFAULT_NOTIFICATION_DURATION) {
+            const notificationArea = document.getElementById('notification-area');
+            if (!notificationArea) return;
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            notificationArea.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), NOTIFICATION_FADEOUT_DURATION);
+            }, duration);
         }
 
         async function createNewSong() {
-            const newName = $('#newSongName').val().trim();
-            if (!newName) {
-                alert('Please enter a name for the new song.');
-                return;
+            const songName = $('#newSongName').val().trim();
+            if (!songName) {
+                showNotification('Please enter a song name', 'warning');
+                return Promise.reject('No song name provided');
             }
 
-            const newSongId = `song-${Date.now()}`;
-            const newSongData = {
-                id: newSongId,
-                name: newName,
-                notes: '',
-                pads: {}
-            };
-
-            const tx = db.transaction('songs', 'readwrite');
-            const store = tx.objectStore('songs');
-            const req = store.put(newSongData, newSongId);
-
-            req.onsuccess = async () => {
-                alert(`Song "${newName}" created!`);
-                $('#newSongName').val('');
-                await listSongs(); // Refresh song list
-                $('#songSelector').val(newSongId); // Select the new song
-                loadSong(newSongId); // Load it into the editor
-            };
-            req.onerror = () => {
-                console.error('Error creating new song:', req.error);
-                alert('Failed to create new song.');
-            };
+            try {
+                const existingSongs = await getAllSongNamesFromDB();
+                if (existingSongs.includes(songName)) {
+                    showNotification('A song with this name already exists', 'warning');
+                    return Promise.reject('Song already exists');
+                }
+                
+                const newSongData = {
+                    notes: '',
+                    pads: {},
+                    sequence: []
+                };
+                
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(STORE_NAME_SONGS, 'readwrite');
+                    const store = tx.objectStore(STORE_NAME_SONGS);
+                    
+                    tx.onerror = (event) => {
+                        console.error('Transaction error:', event.target.error);
+                        reject(event.target.error);
+                    };
+                    
+                    const addReq = store.add(newSongData, songName);
+                    
+                    addReq.onsuccess = async () => {
+                        try {
+                            await listSongs();
+                            updateSongHash(songName);
+                            $('#chordNameDisplay').text('');
+                            $('#songNotes').val('');
+                            $('#newSongName').val('');
+                            showNotification(`Created new song: ${songName}`, 'success');
+                            resolve();
+                        } catch (error) {
+                            console.error('Error in success handler:', error);
+                            reject(error);
+                        }
+                    };
+                    
+                    addReq.onerror = (event) => {
+                        console.error('Error adding song:', event.target.error);
+                        showNotification('Failed to create new song', 'error');
+                        reject(event.target.error);
+                    };
+                });
+            } catch (error) {
+                console.error('Error in createNewSong:', error);
+                return Promise.reject(error);
+            }
         }
 
         function renderPadList() {
-            $('#padList').empty();
-            const pads = currentSong?.pads || {};
-            for (let i = 36; i <= 43; i++) { // Pads 36 to 43 (MIDI drum notes)
-                const label = `Pad ${i}`;
-                const btn = $(`<button>${label}</button>`);
-                btn.on('click', () => selectPad(i));
-                $('#padList').append(btn);
+            const padList = $('#padList');
+            padList.empty();
+            
+            if (!currentSong || !currentSong.pads) {
+                return;
             }
-        }
 
-        function selectPad(padNum) {
-            currentPad = padNum;
-            $('.pad-list button').removeClass('active');
-            $(`.pad-list button:contains(Pad ${padNum})`).addClass('active');
+            // Iterate over all possible pad IDs (36 to 43) to maintain grid structure
+            // even for empty pads.
+            for (let i = 36; i <= 43; i++) {
+                const padId = String(i); // Ensure padId is a string
+                const pad = currentSong.pads[padId];
+                let chordName = 'Empty';
+                if (pad && pad.chord && pad.chord.length > 0) {
+                    chordName = detectChord(pad.chord) || 'Unknown Chord';
+                }
 
-            const chordNotes = (currentSong?.pads?.[padNum]?.chord || []);
-            selectedNotes = [...chordNotes]; // Copy array
-            renderPiano();
-            updateChordNameDisplay();
+                const padDiv = $(`<div class="pad-chord" data-pad-id="${padId}">
+                                    <div class="pad-name">Pad ${padId}</div>
+                                    <div class="chord-name">${chordName}</div>
+                                </div>`);
+                
+                if (currentPad === padId) {
+                    padDiv.addClass('active');
+                }
+
+                padDiv.on('click', function() {
+                    // Remove active class from all pads
+                    padList.find('.pad-chord').removeClass('active');
+                    // Add active class to clicked pad
+                    $(this).addClass('active');
+                    
+                    // Set current pad and load its notes
+                    currentPad = padId;
+                    selectedNotes = (pad && pad.chord) ? [...pad.chord] : [];
+                    renderPiano();
+                });
+                
+                padList.append(padDiv);
+            }
         }
 
         function renderPiano() {
-            $('#pianoContainer').empty();
-            let currentX = 0;
+            const pianoContainer = document.getElementById('pianoContainer');
+            pianoContainer.innerHTML = '';
+            
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            const totalWhiteKeys = countWhiteKeysInPianoRange(PIANO_START_MIDI, PIANO_END_MIDI);
+            svg.setAttribute('width', totalWhiteKeys * WHITE_KEY_WIDTH + (2 * SVG_KEY_STROKE_WIDTH));
+            svg.setAttribute('height', WHITE_KEY_HEIGHT + (2 * SVG_KEY_STROKE_WIDTH));
+            
+            const whiteKeysGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            const blackKeysGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            let whiteKeyIndex = 0;
 
-            for (let midiNote = PIANO_START_MIDI; midiNote <= PIANO_END_MIDI; midiNote++) {
-                const noteValue = midiNote % OCTAVE_SEMITONES;
-                const isBlackKey = blackKeys.includes(noteValue);
-                const noteName = getNoteNameFromMIDI(midiNote);
+            for (let note = PIANO_START_MIDI; note <= PIANO_END_MIDI; note++) {
+                const noteName = getNoteNameFromMIDI(note);
+                const isBlackKey = noteName.includes('#');
+                
+                const keyRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                keyRect.dataset.note = note;
+                
+                const keyText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                keyText.setAttribute('class', 'key-text');
+                keyText.textContent = noteName;
+                keyText.style.fontSize = SVG_KEY_TEXT_FONT_SIZE;
 
-                let keyElement;
-                if (isBlackKey) {
-                    keyElement = $(`<div class="piano-key black-key" data-note="${midiNote}" style="left: ${currentX + BLACK_KEY_OFFSET_X}px;"></div>`);
+                if (!isBlackKey) {
+                    keyRect.setAttribute('x', whiteKeyIndex * WHITE_KEY_WIDTH + SVG_KEY_STROKE_WIDTH);
+                    keyRect.setAttribute('y', SVG_KEY_STROKE_WIDTH);
+                    keyRect.setAttribute('width', WHITE_KEY_WIDTH - SVG_KEY_STROKE_WIDTH);
+                    keyRect.setAttribute('height', WHITE_KEY_HEIGHT);
+                    keyRect.setAttribute('class', 'piano-key white');
+                    
+                    keyText.setAttribute('x', whiteKeyIndex * WHITE_KEY_WIDTH + WHITE_KEY_WIDTH/2 + SVG_KEY_STROKE_WIDTH);
+                    keyText.setAttribute('y', WHITE_KEY_HEIGHT - KEY_TEXT_Y_OFFSET + SVG_KEY_STROKE_WIDTH);
+                    keyText.setAttribute('text-anchor', 'middle');
+                    
+                    whiteKeysGroup.appendChild(keyRect);
+                    whiteKeysGroup.appendChild(keyText);
+                    whiteKeyIndex++;
                 } else {
-                    keyElement = $(`<div class="piano-key white-key" data-note="${midiNote}" style="left: ${currentX}px;"></div>`);
-                    currentX += WHITE_KEY_WIDTH; // Advance X for white keys
+                    const prevWhiteKeyX = (whiteKeyIndex - 1) * WHITE_KEY_WIDTH;
+                    keyRect.setAttribute('x', prevWhiteKeyX + WHITE_KEY_WIDTH - BLACK_KEY_WIDTH/2 + SVG_KEY_STROKE_WIDTH);
+                    keyRect.setAttribute('y', SVG_KEY_STROKE_WIDTH);
+                    keyRect.setAttribute('width', BLACK_KEY_WIDTH);
+                    keyRect.setAttribute('height', BLACK_KEY_HEIGHT);
+                    keyRect.setAttribute('class', 'piano-key black');
+
+                    keyText.setAttribute('x', prevWhiteKeyX + WHITE_KEY_WIDTH + SVG_KEY_STROKE_WIDTH);
+                    keyText.setAttribute('y', BLACK_KEY_HEIGHT - KEY_TEXT_Y_OFFSET + SVG_KEY_STROKE_WIDTH);
+                    keyText.setAttribute('text-anchor', 'middle');
+                    keyText.setAttribute('fill', '#fff');
+                    
+                    blackKeysGroup.appendChild(keyRect);
+                    blackKeysGroup.appendChild(keyText);
                 }
 
-                // Add note name to the key
-                keyElement.append(`<div class="key-text">${noteName}</div>`);
-
-                if (selectedNotes.includes(midiNote)) {
-                    keyElement.addClass('active');
-                }
-
-                keyElement.on('click', () => toggleNote(midiNote, keyElement));
-                $('#pianoContainer').append(keyElement);
+                // Add click handler
+                keyRect.addEventListener('click', () => toggleNote(note, keyRect));
             }
+
+            svg.appendChild(whiteKeysGroup);
+            svg.appendChild(blackKeysGroup);
+            pianoContainer.appendChild(svg);
+
+            // Apply active class based on selectedNotes
+            svg.querySelectorAll('.piano-key').forEach(key => {
+                const midiNote = parseInt(key.dataset.note);
+                if (selectedNotes.includes(midiNote)) {
+                    key.classList.add('active');
+                }
+            });
+
+            updateChordNameDisplay();
+        }
+
+        function countWhiteKeysInPianoRange(startNote, endNote) {
+            let count = 0;
+            for (let note = startNote; note <= endNote; note++) {
+                if (!getNoteNameFromMIDI(note).includes('#')) count++;
+            }
+            return count;
+        }
+
+        // Add debounce constants
+        const SAVE_DELAY = 500;                 // ms for debouncing save operations
+        const SAVE_INDICATOR_DURATION = 1500;   // ms for save indicator display
+
+        let saveTimeout = null; // For debouncing save operations
+
+        function debounceSave() {
+            if (saveTimeout) clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                savePad();
+            }, SAVE_DELAY);
         }
 
         function toggleNote(note, keyEl) {
             const index = selectedNotes.indexOf(note);
             if (index > -1) {
                 selectedNotes.splice(index, 1);
-                keyEl.removeClass('active');
+                keyEl.classList.remove('active');
             } else {
                 selectedNotes.push(note);
                 selectedNotes.sort((a, b) => a - b); // Keep notes sorted
-                keyEl.addClass('active');
+                keyEl.classList.add('active');
             }
             updateChordNameDisplay();
+            debounceSave();
         }
 
         function clearPiano() {
             selectedNotes = [];
-            $('#pianoContainer .piano-key').removeClass('active');
-            $('#chordNameDisplay').text('');
+            const pianoContainer = document.getElementById('pianoContainer');
+            pianoContainer.querySelectorAll('.piano-key').forEach(key => key.classList.remove('active'));
+            document.getElementById('chordNameDisplay').textContent = '';
         }
 
         function updateChordNameDisplay() {
+            const chordNameDisplay = document.getElementById('chordNameDisplay');
             if (selectedNotes.length > 0) {
                 const chordName = detectChord(selectedNotes);
-                $('#chordNameDisplay').text(`: ${chordName}`);
+                chordNameDisplay.textContent = `: ${chordName}`;
             } else {
-                $('#chordNameDisplay').text('');
+                chordNameDisplay.textContent = '';
             }
         }
 
         function savePad() {
             if (!currentSong) {
-                alert('No song selected. Please choose or create a song first.');
+                showNotification('No song selected. Please choose or create a song first.', 'warning');
                 return;
             }
-            if (currentPad === null) {
-                alert('No pad selected. Please select a pad to save the chord.');
+            if (!currentPad) {
+                showNotification('Please select a pad from the grid first.', 'warning');
                 return;
             }
 
             if (!currentSong.pads) currentSong.pads = {};
-            currentSong.pads[currentPad] = { chord: [...selectedNotes] };
-            currentSong.notes = $('#songNotes').val(); // Save notes too
+            currentSong.pads[currentPad] = { 
+                chord: [...selectedNotes],
+                bass: []
+            };
+            currentSong.notes = $('#songNotes').val();
 
-            const tx = db.transaction('songs', 'readwrite');
-            const store = tx.objectStore('songs');
-            const req = store.put(currentSong, currentSong.id);
+            const tx = db.transaction(STORE_NAME_SONGS, 'readwrite');
+            const store = tx.objectStore(STORE_NAME_SONGS);
+            const req = store.put({
+                chords: currentSong.pads,
+                notes: currentSong.notes,
+                sequence: currentSong.sequence
+            }, currentSong.name);
 
             req.onsuccess = () => {
-                alert(`Pad ${currentPad} saved for song "${currentSong.name || currentSong.id}"!`);
-                // No need to clear piano after save, keep current selection
-                // clearPiano();
+                // Show save indicator instead of notification
+                const saveIndicator = document.createElement('div');
+                saveIndicator.className = 'save-indicator';
+                saveIndicator.textContent = '✓ Saved';
+                document.body.appendChild(saveIndicator);
+                requestAnimationFrame(() => { saveIndicator.style.opacity = '1'; });
+                setTimeout(() => {
+                    saveIndicator.style.opacity = '0';
+                    setTimeout(() => saveIndicator.remove(), 300);
+                }, SAVE_INDICATOR_DURATION);
+                renderPadList();
             };
             req.onerror = () => {
                 console.error('Error saving pad:', req.error);
-                alert('Failed to save pad.');
+                showNotification('Failed to save pad.', 'error');
             };
         }
 
         function exportJSON() {
             if (!currentSong) {
-                alert('No song selected to export.');
+                showNotification('No song selected to export.', 'warning');
                 return;
             }
             const json = JSON.stringify(currentSong, null, 2);
@@ -478,6 +572,7 @@
             a.download = `${currentSong.name || currentSong.id}.json`;
             a.click();
             URL.revokeObjectURL(a.href);
+            showNotification('Song exported successfully', 'success');
         }
 
         function importJSONFile(file) {
@@ -485,58 +580,93 @@
             reader.onload = e => {
                 try {
                     const data = JSON.parse(e.target.result);
-                    if (!data || !data.id || !data.name) {
-                        throw new Error("Invalid JSON structure. Missing 'id' or 'name'.");
+                    if (!data || !data.name) {
+                        throw new Error("Invalid JSON structure. Missing 'name'.");
                     }
+                    if (!data.pads) data.pads = {};
 
-                    const tx = db.transaction('songs', 'readwrite');
-                    const store = tx.objectStore('songs');
-                    const req = store.put(data, data.id); // Use put to add or update
+                    const tx = db.transaction(STORE_NAME_SONGS, 'readwrite');
+                    const store = tx.objectStore(STORE_NAME_SONGS);
+                    const req = store.put(data, data.name);
 
                     req.onsuccess = () => {
-                        alert(`Song "${data.name}" imported successfully!`);
-                        listSongs(); // Refresh song list to show the new/updated song
+                        showNotification(`Song "${data.name}" imported successfully!`, 'success');
+                        listSongs();
                     };
                     req.onerror = () => {
                         console.error('Error importing song into DB:', req.error);
-                        alert(`Failed to import song "${data.name}".`);
+                        showNotification(`Failed to import song "${data.name}".`, 'error');
                     };
                 } catch (error) {
                     console.error('Error parsing or importing JSON:', error);
-                    alert(`Error importing file: ${error.message}. Please ensure it's a valid song JSON.`);
+                    showNotification(`Error importing file: ${error.message}. Please ensure it's a valid song JSON.`, 'error');
                 }
             };
             reader.readAsText(file);
         }
 
-        $(async () => {
-            await openDB();
-            await listSongs(); // Load songs on startup
+        function updateSongHash(songName) {
+            if (songName && songName !== 'default') {
+                window.location.hash = 'song=' + encodeURIComponent(songName);
+            } else {
+                window.location.hash = '';
+            }
+        }
 
-            $('#songSelector').on('change', function() {
-                const id = $(this).val();
-                if (id) {
-                    loadSong(id);
+        function handleHashChange() {
+            const songName = getSongNameFromHash();
+            if (songName) {
+                $('#songSelector').val(songName);
+                loadSong(songName).catch(console.error);
+            }
+        }
+
+        $(async () => {
+            try {
+                await openDB();
+                const songs = await listSongs();
+                const songSelector = $('#songSelector');
+                
+                $(window).on('hashchange', handleHashChange);
+                
+                if (songs && songs.length > 0) {
+                    let currentSongName = getSongNameFromHash();
+                    if (!currentSongName || !songs.includes(currentSongName)) {
+                        currentSongName = songs[0];
+                        updateSongHash(currentSongName);
+                    }
+                    
+                    await loadSong(currentSongName);
+                    songSelector.val(currentSongName);
                 } else {
+                    console.log('No songs found in database');
                     currentSong = null;
                     $('#songNotes').val('');
                     $('#padList').empty();
-                    clearPiano();
                     $('#chordNameDisplay').text('');
                 }
-            });
 
-            $('#createNewSong').on('click', createNewSong);
-            $('#savePad').on('click', savePad);
-            $('#exportJSON').on('click', exportJSON);
-            $('#importJSON').on('change', function(e) {
-                const file = e.target.files[0];
-                if (file) importJSONFile(file);
-            });
+                // Initialize piano on page load
+                renderPiano();
 
-            // If no songs exist after initial load, prompt to create one
-            if (!currentSong) {
-                alert("Welcome to the reChord Admin Editor! No songs found. Please create a new song to get started.");
+                songSelector.on('change', function() {
+                    const songName = $(this).val();
+                    if (songName) {
+                        updateSongHash(songName);
+                    }
+                });
+
+                $('#createNewSong').on('click', createNewSong);
+                $('#importJSON').on('change', function(e) {
+                    const file = e.target.files[0];
+                    if (file) importJSONFile(file);
+                });
+
+                // Add auto-save for song notes
+                $('#songNotes').on('input', debounceSave);
+            } catch (error) {
+                console.error('Initialization error:', error);
+                alert('Error initializing the application. Please check the console for details.');
             }
         });
     </script>
