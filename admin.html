@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -279,8 +278,9 @@
             <input type="text" id="songSearchInput" placeholder="Search song name or ID..." autocomplete="off">
             <div id="songSuggestions"></div>
         </div>
-        <button class="info" id="loadButton">Load</button>
-        <button id="refreshKeysButton">🔁 Refresh Keys</button>
+        <!-- Load button is kept for explicit loading if needed, though search is primary -->
+        <button class="info" onclick="loadAndRenderEntry()">Load</button>
+        <button onclick="refreshKeys()">🔁 Refresh Keys</button>
         <button class="info" onclick="createNewEntry()">➕ New Entry</button>
     </div>
 
@@ -434,7 +434,7 @@
             storeSelect: null,
             songSearchInput: null,
             songSuggestions: null,
-            keySelect: null, // Will be dynamically replaced/hidden but keep reference for now if needed.
+            // keySelect: null, // No longer used as a direct element
             dataEntryForm: null,
             jsonEditor: null,
             adminPianoSection: null,
@@ -443,7 +443,7 @@
             adminPianoChordNameDisplay: null,
             applyPadNumberInput: null,
             applySequenceIndexInput: null,
-            songNotesTextarea: null,
+            // songNotesTextarea: null, // Will be cached dynamically
             notificationArea: null,
             saveIndicator: null,
         };
@@ -452,7 +452,7 @@
             domElements.storeSelect = document.getElementById('storeSelect');
             domElements.songSearchInput = document.getElementById('songSearchInput');
             domElements.songSuggestions = document.getElementById('songSuggestions');
-            domElements.keySelect = document.getElementById('keySelect'); // Placeholder, will be unused for songs
+            // domElements.keySelect = document.getElementById('keySelect'); // Placeholder, will be unused for songs
             domElements.dataEntryForm = document.getElementById('dataEntryForm');
             domElements.jsonEditor = document.getElementById('jsonEditor');
             domElements.adminPianoSection = document.getElementById('adminPianoSection');
@@ -464,8 +464,8 @@
             domElements.notificationArea = document.getElementById('notification-area');
             domElements.saveIndicator = document.getElementById('saveIndicator');
 
-            // Notes textarea will be created dynamically when a song is loaded/created
-            // domElements.songNotesTextarea = document.getElementById('songNotes');
+            // songNotesTextarea etc. are created dynamically within renderForm,
+            // so they are not cached here initially. Event delegation handles them.
         }
 
         async function initDB() {
@@ -798,17 +798,6 @@
                 domElements.dataEntryForm.innerHTML = formHtml;
                 domElements.adminPianoSection.style.display = 'block'; // Show piano for songs
 
-                // Cache the notes textarea and attach auto-save
-                domElements.songNotesTextarea = document.getElementById('songNotes');
-                if (domElements.songNotesTextarea) {
-                    domElements.songNotesTextarea.addEventListener('input', debouncedSaveEntry);
-                }
-
-                // Attach auto-save to JSON textareas
-                document.getElementById('songSequence').addEventListener('input', debouncedSaveEntry);
-                document.getElementById('songPads').addEventListener('input', debouncedSaveEntry);
-
-
                 loadPianoWithNotes([]); // Clear admin piano for new load
             } else if (storeName === 'ports') {
                 currentLoadedKey = 'current'; // Fixed key for ports
@@ -875,11 +864,6 @@
                     </div>
                 `;
                 domElements.dataEntryForm.innerHTML = formHtml;
-
-                // Attach auto-save to port config fields
-                document.querySelectorAll('#dataEntryForm input').forEach(input => {
-                    input.addEventListener('input', debouncedSaveEntry);
-                });
             }
             domElements.jsonEditor.value = JSON.stringify(data, null, 2);
         }
@@ -898,8 +882,13 @@
         // --- Data Handling Functions ---
         async function loadAndRenderEntry() {
             const storeName = domElements.storeSelect.value;
-            let key = domElements.songSearchInput.value || domElements.keySelect.value; // For ports, use keySelect value
-            if (storeName === 'ports') key = 'current'; // Ports only have one key
+            let key = domElements.songSearchInput.value; // Get key from search input
+
+            // If the store is 'ports', the key is fixed as 'current'
+            if (storeName === 'ports') {
+                key = 'current';
+                domElements.songSearchInput.value = key; // Ensure input shows 'current'
+            }
 
             if (!key) {
                 renderForm(storeName, {}); // Render an empty form if no key is selected
@@ -934,38 +923,38 @@
             let key = null;
 
             if (storeName === 'songs') {
-                key = document.getElementById('songId').value;
+                key = document.getElementById('songId')?.value; // Use optional chaining
                 data = {
                     id: key,
-                    name: document.getElementById('songName').value,
-                    notes: document.getElementById('songNotes').value,
+                    name: document.getElementById('songName')?.value,
+                    notes: document.getElementById('songNotes')?.value,
                 };
                 try {
-                    data.sequence = JSON.parse(document.getElementById('songSequence').value);
+                    data.sequence = JSON.parse(document.getElementById('songSequence')?.value || '[]');
                 } catch (e) {
                     throw new Error('Invalid JSON in Sequence field: ' + e.message); // Throw to stop save
                 }
                 try {
-                    data.pads = JSON.parse(document.getElementById('songPads').value);
+                    data.pads = JSON.parse(document.getElementById('songPads')?.value || '{}');
                 } catch (e) {
                     throw new Error('Invalid JSON in Pads field: ' + e.message); // Throw to stop save
                 }
             } else if (storeName === 'ports') {
                 key = 'current'; // Ports store typically has a single fixed key
                 data = {
-                    input: document.getElementById('portInputId').value,
+                    input: document.getElementById('portInputId')?.value,
                     outputs: {
-                        main: document.getElementById('portOutputMain').value,
-                        bass: document.getElementById('portOutputBass').value,
-                        chord: document.getElementById('portOutputChord').value,
-                        string: document.getElementById('portOutputString').value,
+                        main: document.getElementById('portOutputMain')?.value,
+                        bass: document.getElementById('portOutputBass')?.value,
+                        chord: document.getElementById('portOutputChord')?.value,
+                        string: document.getElementById('portOutputString')?.value,
                     },
                     channels: {
-                        input: parseInt(document.getElementById('channelInput').value, 10),
-                        main: parseInt(document.getElementById('channelMain').value, 10),
-                        bass: parseInt(document.getElementById('channelBass').value, 10),
-                        chord: parseInt(document.getElementById('channelChord').value, 10),
-                        string: parseInt(document.getElementById('channelString').value, 10),
+                        input: parseInt(document.getElementById('channelInput')?.value || 0, 10),
+                        main: parseInt(document.getElementById('channelMain')?.value || 0, 10),
+                        bass: parseInt(document.getElementById('channelBass')?.value || 0, 10),
+                        chord: parseInt(document.getElementById('channelChord')?.value || 0, 10),
+                        string: parseInt(document.getElementById('channelString')?.value || 0, 10),
                     }
                 };
             }
@@ -1029,8 +1018,6 @@
             const storeName = domElements.storeSelect.value;
             domElements.songSuggestions.innerHTML = '';
             domElements.songSearchInput.value = '';
-            domElements.keySelect.innerHTML = ''; // Clear port key select
-            domElements.keySelect.style.display = 'none'; // Hide by default
 
             if (storeName === 'songs') {
                 domElements.songSearchInput.style.display = 'inline-block';
@@ -1038,12 +1025,7 @@
                 filterAndDisplaySuggestions(); // Populate initial suggestions
             } else { // ports store
                 domElements.songSearchInput.style.display = 'none';
-                domElements.keySelect.style.display = 'inline-block';
-                const opt = document.createElement('option');
-                opt.value = 'current';
-                opt.textContent = 'current';
-                domElements.keySelect.appendChild(opt);
-                domElements.keySelect.value = 'current';
+                // For 'ports', ensure currentLoadedKey is set and explicitly load it
                 currentLoadedKey = 'current';
                 await loadAndRenderEntry(); // Load the 'current' port config
             }
@@ -1185,7 +1167,7 @@
             domElements.songSuggestions.innerHTML = '';
             activeSuggestionIndex = -1;
 
-            if (query.length < 2) { // Show all if query is short
+            if (query.length < 2 && query.length !== 0) { // If 0 characters, or 1, don't display suggestions
                 domElements.songSuggestions.style.display = 'none';
                 return;
             }
@@ -1270,46 +1252,34 @@
             }
         });
 
-        // --- Missing Function Implementations ---
-        async function loadAndRenderEntry() {
-            const key = domElements.songSearchInput.value.trim();
-            if (!key) {
-                showNotification('Please enter a song name or ID', 'warning');
-                return;
-            }
-            try {
-                await loadEntry(key);
-                showNotification(`Loaded: ${key}`, 'success');
-            } catch (error) {
-                showNotification(`Failed to load: ${error.message}`, 'error');
-                console.error('Load error:', error);
-            }
-        }
-
-        async function refreshKeys() {
-            try {
-                const storeSelect = document.getElementById('storeSelect');
-                const storeName = storeSelect.value;
-                const keys = await getAllKeys(storeName);
-                // Update UI with keys
-                console.log('Refreshed keys:', keys);
-                showNotification('Keys refreshed', 'info');
-            } catch (error) {
-                showNotification('Failed to refresh keys: ' + error.message, 'error');
-                console.error('Refresh keys error:', error);
-            }
-        }
-
-        // Initialize on DOM Content Loaded
+        // SINGLE DELEGATED LISTENER FOR AUTO-SAVING ALL FORM INPUTS
         window.addEventListener('DOMContentLoaded', async () => {
-            // Set up button event listeners
-            document.addEventListener('click', (e) => {
-                if (e.target.id === 'loadButton') loadAndRenderEntry();
-                if (e.target.id === 'refreshKeysButton') refreshKeys();
-            });
-            
             cacheDOMElements(); // Must cache first
             createAdminPianoSVG(); // Create the interactive piano once
+
+            // Attach a single delegated input listener to the form container
+            if (domElements.dataEntryForm) {
+                domElements.dataEntryForm.addEventListener('input', (event) => {
+                    const targetId = event.target.id;
+                    const storeName = domElements.storeSelect.value;
+
+                    if (storeName === 'songs') {
+                        // Check if the input is one of the song-specific fields
+                        if (targetId === 'songName' || targetId === 'songNotes' || targetId === 'songSequence' || targetId === 'songPads') {
+                            debouncedSaveEntry();
+                        }
+                    } else if (storeName === 'ports') {
+                        // Check if the input is one of the port-specific fields
+                        if (targetId.startsWith('portInputId') || targetId.startsWith('portOutput') || targetId.startsWith('channel')) {
+                            debouncedSaveEntry();
+                        }
+                    }
+                });
+            } else {
+                console.error("Failed to find 'dataEntryForm' for delegated event listener.");
+                showNotification("Critical error: Main form not found.", "error");
+            }
+
             try {
                 await initDB();
                 await refreshKeys(); // Initial load of keys and form
