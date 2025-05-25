@@ -11,7 +11,7 @@
     <div id="notification-area"></div>
     <div id="main">
         <h1 class="page-title">reChord Admin Editor</h1>
-        <p class="tagline">Actual Intelligence In Harmony</p>
+        <p class="tagline">Actual Intelligence In Harmony For All Your Chords</p>
     </div>
 
     <div class="top-card">
@@ -26,6 +26,12 @@
     <div class="piano-section">
         <h2>Pad Chords</h2>
         <div class="pad-chords-grid" id="padList"></div>
+    </div>
+
+    <div class="piano-section">
+        <h2>Chord Sequence</h2>
+        <div id="sequenceEditor" class="sequence-steps"></div>
+        <button id="clearSequence" class="control-button">🧹 Clear Sequence</button>
     </div>
 
     <div class="piano-section">
@@ -249,6 +255,7 @@
                         
                         $('#songNotes').val(currentSong.notes || '');
                         renderPadList();
+                        renderSequence();
                         $('#chordNameDisplay').text('');
                         resolve();
                     } else {
@@ -360,20 +367,29 @@
                 const padId = String(i); // Ensure padId is a string
                 const pad = currentSong.pads[padId];
                 let chordName = 'Empty';
+                let chordNotes = '';
+                
                 if (pad && pad.chord && pad.chord.length > 0) {
                     chordName = detectChord(pad.chord) || 'Unknown Chord';
+                    // Convert MIDI notes to note names with octaves
+                    chordNotes = pad.chord.map(note => getNoteNameFromMIDI(note)).join(' ');
                 }
 
                 const padDiv = $(`<div class="pad-chord" data-pad-id="${padId}">
                                     <div class="pad-name">Pad ${padId}</div>
                                     <div class="chord-name">${chordName}</div>
+                                    <div class="chord-notes">${chordNotes}</div>
+                                    <button class="add-to-sequence" title="Add to sequence">+</button>
                                 </div>`);
                 
                 if (currentPad === padId) {
                     padDiv.addClass('active');
                 }
 
-                padDiv.on('click', function() {
+                padDiv.on('click', function(e) {
+                    // Don't trigger if clicking the add button
+                    if ($(e.target).hasClass('add-to-sequence')) return;
+                    
                     // Remove active class from all pads
                     padList.find('.pad-chord').removeClass('active');
                     // Add active class to clicked pad
@@ -383,6 +399,20 @@
                     currentPad = padId;
                     selectedNotes = (pad && pad.chord) ? [...pad.chord] : [];
                     renderPiano();
+                });
+
+                // Add click handler for the add button
+                padDiv.find('.add-to-sequence').on('click', function(e) {
+                    e.stopPropagation(); // Prevent pad selection
+                    if (currentSong && currentSong.sequence.length < 16) {
+                        if (!currentSong.sequence) currentSong.sequence = [];
+                        currentSong.sequence.push(padId);
+                        renderSequence();
+                        debounceSave();
+                        showNotification(`Added Pad ${padId} to sequence`, 'success');
+                    } else if (currentSong.sequence.length >= 16) {
+                        showNotification('Sequence is full (max 16 steps)', 'warning');
+                    }
                 });
                 
                 padList.append(padDiv);
@@ -605,6 +635,31 @@
             reader.readAsText(file);
         }
 
+        function renderSequence() {
+            const container = $('#sequenceEditor');
+            container.empty();
+            
+            if (!currentSong || !currentSong.sequence) {
+                currentSong.sequence = [];
+                return;
+            }
+
+            currentSong.sequence.forEach((step, i) => {
+                const padNum = step;
+                const padChord = currentSong.pads?.[padNum]?.chord || [];
+                const name = detectChord(padChord);
+                const stepEl = $(`<div class="sequence-step" title="Click to remove">[${padNum}] ${name}</div>`);
+                
+                stepEl.on('click', () => {
+                    currentSong.sequence.splice(i, 1);
+                    renderSequence();
+                    debounceSave();
+                });
+                
+                container.append(stepEl);
+            });
+        }
+
         function updateSongHash(songName) {
             if (songName && songName !== 'default') {
                 window.location.hash = 'song=' + encodeURIComponent(songName);
@@ -660,6 +715,16 @@
                 $('#importJSON').on('change', function(e) {
                     const file = e.target.files[0];
                     if (file) importJSONFile(file);
+                });
+
+                // Add clear sequence button handler
+                $('#clearSequence').on('click', () => {
+                    if (currentSong && confirm('Clear the entire sequence?')) {
+                        currentSong.sequence = [];
+                        renderSequence();
+                        debounceSave();
+                        showNotification('Sequence cleared', 'info');
+                    }
                 });
 
                 // Add auto-save for song notes
