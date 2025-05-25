@@ -1,251 +1,201 @@
 /* style.css */
 
+/* ===== CSS Variables ===== */
 :root {
-    --cell-padding: 8px;
+    /* Colors */
+    --color-primary: #4CAF50;
+    --color-primary-light: rgba(76, 175, 80, 0.3);
+    --color-primary-dark: #388E3C;
+    --color-text: #222;
+    --color-text-light: #666;
+    --color-background: #f9f9f9;
+    --color-white: #fff;
+    --color-black: #000;
+    --color-border: #ddd;
+    --color-success: #4CAF50;
+    --color-info: #2196F3;
+    --color-warning: #FFC107;
+    --color-error: #f44336;
+    
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 20px;
+    
+    /* Typography */
+    --font-family-mono: 'Consolas', 'Menlo', 'Monaco', 'Liberation Mono', 'Lucida Console', 'DejaVu Sans Mono', 'Courier New', 'Courier', monospace;
+    --font-size-xs: 0.8rem;
+    --font-size-sm: 0.9rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.1rem;
+    --font-size-xl: 1.2rem;
+    --font-size-xxl: 2.2rem;
+    
+    /* Layout */
+    --border-radius: 4px;
+    --box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+    --transition-speed: 0.2s;
+    
+    /* Components */
     --header-bg: #f2f2f2;
     --row-hover: #f5f5f5;
     --highlight: #d1ffd1;
-    --border: #ddd;
-    --radius: 4px;
     --loopback-bg: #ffe6e6;
 }
 
-/* Add new styles for pad chords section */
+/* ===== Base Styles ===== */
+body {
+    background: var(--color-background);
+    font-family: var(--font-family-mono) !important;
+    color: var(--color-text);
+    margin: 0;
+    padding: var(--spacing-xl);
+    line-height: 1.4;
+}
+
+h1.page-title {
+    font-family: var(--font-family-mono);
+    font-weight: bold;
+    font-size: var(--font-size-xxl);
+    margin-bottom: var(--spacing-xs);
+}
+
+p.tagline {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-lg);
+    margin-top: 0;
+    margin-bottom: var(--spacing-md);
+}
+
+/* ===== Layout Components ===== */
+.top-card {
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: var(--spacing-lg) var(--spacing-xl) var(--spacing-sm) var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+}
+
+.piano-section {
+    margin: var(--spacing-xl) 0;
+    padding: var(--spacing-lg);
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+}
+
+/* ===== Pad Chords Section ===== */
 .pad-chords-section {
-    margin: 20px 0;
-    padding: 15px;
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+    margin: var(--spacing-xl) 0;
+    padding: var(--spacing-lg);
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
 }
 
 .pad-chords-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     grid-template-rows: repeat(2, auto);
-    gap: 10px;
-    margin-top: 10px;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
 }
 
 .pad-chord {
-    padding: 10px;
-    background: var(--header-bg);
-    border-radius: var(--radius);
-    font-family: monospace;
-    transition: all 0.2s ease;
-    text-align: center; /* Added for better layout */
+    position: relative;
+    padding: var(--spacing-sm);
+    margin: var(--spacing-xs);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    background: var(--color-white);
+    min-height: 80px;
 }
 
 .pad-chord.active {
     background: var(--highlight);
-    box-shadow: 0 0 4px rgba(76,175,80,0.3);
+    box-shadow: 0 0 4px var(--color-primary-light);
 }
 
-.pad-chord .pad-number {
+.pad-name {
     font-weight: bold;
-    margin-bottom: 5px;
+    margin-bottom: var(--spacing-xs);
 }
 
-.pad-chord .chord-name {
-    color: #666;
-    font-size: 0.9em;
-    margin-bottom: 3px;
+.chord-name {
+    color: var(--color-text);
+    margin-bottom: var(--spacing-xs);
 }
 
-.pad-chord .chord-notes {
-    font-size: 0.8em;
-    color: #888;
-    word-wrap: break-word; /* Ensure notes wrap if too many */
+.chord-notes {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-light);
+    margin-top: var(--spacing-xs);
+    word-break: break-all;
 }
 
-body {
-    background: #f9f9f9;
-    font-family: 'Consolas', 'Menlo', 'Monaco', 'Liberation Mono', 'Lucida Console', 'DejaVu Sans Mono', 'Courier New', 'Courier', monospace !important;
-    color: #222;
-    margin: 0;
-    padding: 20px;
-    line-height: 1.4;
-}
-
-h1.page-title {
-    font-family: 'Courier New', Courier, monospace; /* Already in body but can be explicit */
-    font-weight: bold;
-    font-size: 2.2rem;
-    margin-bottom: 0.5rem;
-}
-p.tagline {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 1.1rem;
-    margin-top: 0;
-    margin-bottom: 1.2rem;
-}
-
-.top-card {
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
-    padding: 16px 18px 10px 18px;
-    margin-bottom: 18px;
-}
-
-.song-navigation {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
-}
-
-.song-navigation button {
-    padding: 4px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: white;
+.add-to-sequence {
+    position: absolute;
+    top: var(--spacing-xs);
+    right: var(--spacing-xs);
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--color-white);
+    color: var(--color-text-light);
+    font-size: var(--font-size-base);
+    line-height: 1;
     cursor: pointer;
-    font-family: inherit;
-}
-
-.song-navigation button:hover {
-    background: var(--header-bg);
-}
-
-#song-name { /* Moved from inline style */
-    font-family: 'Courier New', Courier, monospace;
-    font-weight: bold;
-    margin-bottom: 8px;
-    background: none; /* Was var(--header-bg) in HTML, then overridden by inline */
-    padding: 0; /* Was 10px in HTML, then overridden */
-    font-size: 1.1rem;
-}
-
-.status-line { /* For Mode display */
-    margin-bottom: 0;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 1rem;
-}
-
-.controls {
-    margin-bottom: 1rem;
-}
-
-.controls label {
-    margin-right: .5rem;
-}
-
-.controls select {
-    margin-right: 1.5rem;
-}
-
-.status p {
-    margin: 0.5rem 0;
-}
-
-code {
-    background: #eee;
-    padding: 0 4px;
-    border-radius: 3px;
-}
-
-.port-label {
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: 14px;
-    font-weight: bold;
-    margin-bottom: 5px;
+    justify-content: center;
+    transition: all var(--transition-speed) ease;
 }
 
-.port-label select {
-    flex: 1;
-    padding: 5px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: white;
+.add-to-sequence:hover {
+    background: var(--color-primary);
+    color: var(--color-white);
+    border-color: var(--color-primary);
 }
 
-.port-status {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    display: inline-block;
-    margin-right: 8px;
-}
-
-.port-status.connected {
-    background-color: #4CAF50;
-}
-
-.port-status.disconnected {
-    background-color: #f44336;
-}
-
-select:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.midi-activity {
-    width: 8px;
-    height: 8px;
-    background: #666;
-    border-radius: 50%;
-    opacity: 0;
-    transition: background-color 0.1s;
-    margin-left: 8px;
-}
-
-.midi-activity.active {
-    background: #4CAF50;
-    opacity: 1;
-    box-shadow: 0 0 4px rgba(76,175,80,0.8);
-}
-
-.piano-section {
-    margin: 20px 0;
-    padding: 15px;
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
-}
-
-.piano-section h3 {
-    margin: 0 0 10px 0;
-    color: #333;
-}
-
+/* ===== Piano Styles ===== */
 .piano-container {
     display: flex;
     justify-content: center;
     width: 100%;
-    padding: 10px 0;
-    background: #f0f0f0;
-    border-radius: var(--radius);
-    margin: 20px 0;
+    padding: var(--spacing-sm) 0;
+    background: var(--header-bg);
+    border-radius: var(--border-radius);
+    margin: var(--spacing-xl) 0;
     overflow-x: auto;
     white-space: nowrap;
 }
 
 .piano-key {
-    transition: all 0.1s ease;
+    transition: all var(--transition-speed) ease;
 }
 
 .piano-key.white {
-    fill: white;
-    stroke: var(--border);
+    fill: var(--color-white);
+    stroke: var(--color-border);
     stroke-width: 1;
 }
 
 .piano-key.black {
-    fill: #333;
-    stroke: #000;
+    fill: var(--color-text);
+    stroke: var(--color-black);
     stroke-width: 1;
 }
 
 .piano-key.active {
-    fill: #4CAF50;
-    filter: drop-shadow(0 0 4px rgba(76,175,80,0.8));
+    fill: var(--color-primary);
+    filter: drop-shadow(0 0 4px var(--color-primary-light));
 }
 
 .piano-key:hover {
@@ -254,82 +204,120 @@ select:disabled {
 }
 
 .key-text {
-    font-size: 8px;
-    font-family: monospace;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-family-mono);
     user-select: none;
     pointer-events: none;
 }
 
+/* ===== Notification System ===== */
 #notification-area {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
+    bottom: var(--spacing-xl);
+    right: var(--spacing-xl);
     z-index: 1000;
 }
 
 .notification {
     background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 12px 24px;
-    margin: 8px;
-    border-radius: 4px;
+    color: var(--color-white);
+    padding: var(--spacing-md) var(--spacing-xl);
+    margin: var(--spacing-sm);
+    border-radius: var(--border-radius);
     opacity: 1;
-    transition: opacity 0.5s;
+    transition: opacity var(--transition-speed);
 }
 
-.notification.success { border-left: 4px solid #4CAF50; }
-.notification.info { border-left: 4px solid #2196F3; }
-.notification.warning { border-left: 4px solid #FFC107; }
-.notification.error { border-left: 4px solid #f44336; }
+.notification.success { border-left: 4px solid var(--color-success); }
+.notification.info { border-left: 4px solid var(--color-info); }
+.notification.warning { border-left: 4px solid var(--color-warning); }
+.notification.error { border-left: 4px solid var(--color-error); }
 
-.song-controls {
-    margin: 20px 0;
-    padding: 15px;
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+/* ===== Controls and Forms ===== */
+.controls {
+    margin-bottom: var(--spacing-base);
 }
 
-.song-controls textarea,
-.piano-section textarea {
+.controls label {
+    margin-right: var(--spacing-xs);
+}
+
+.controls select {
+    margin-right: var(--spacing-lg);
+}
+
+select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+textarea {
     width: 99%;
-    padding: 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    font-family: inherit;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    font-family: var(--font-family-mono);
     resize: vertical;
 }
 
-.current-chord-info {
-    margin-top: 10px;
-    padding: 10px;
-    background: var(--header-bg);
-    border-radius: var(--radius);
-    font-size: 1.1em;
+/* ===== MIDI Port Controls ===== */
+.port-label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    font-weight: bold;
+    margin-bottom: var(--spacing-xs);
 }
 
-.sequence-section {
-    margin: 20px 0;
-    padding: 15px;
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+.port-label select {
+    flex: 1;
+    padding: var(--spacing-xs);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    background: var(--color-white);
 }
 
+.port-status {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: var(--spacing-sm);
+}
+
+.port-status.connected { background-color: var(--color-success); }
+.port-status.disconnected { background-color: var(--color-error); }
+
+.midi-activity {
+    width: 8px;
+    height: 8px;
+    background: var(--color-text-light);
+    border-radius: 50%;
+    opacity: 0;
+    transition: background-color 0.1s;
+    margin-left: var(--spacing-sm);
+}
+
+.midi-activity.active {
+    background: var(--color-success);
+    opacity: 1;
+    box-shadow: 0 0 4px var(--color-primary-light);
+}
+
+/* ===== Sequence Editor ===== */
 .sequence-steps {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
-    margin: 10px 0;
+    gap: var(--spacing-sm);
+    margin: var(--spacing-sm) 0;
 }
 
 .sequence-step {
-    padding: 8px 12px;
+    padding: var(--spacing-sm) var(--spacing-md);
     background: var(--header-bg);
-    border-radius: var(--radius);
-    font-family: monospace;
+    border-radius: var(--border-radius);
+    font-family: var(--font-family-mono);
 }
 
 .sequence-step.active {
@@ -337,66 +325,38 @@ select:disabled {
     font-weight: bold;
 }
 
-.sequence-status {
-    margin-top: 10px;
-    font-size: 0.9em;
-    color: #666;
-}
-
-/* Styles moved from JS */
-.port-controls { /* Generic class for styling MIDI port control containers */
-    margin-top: 10px;
-    padding: 10px;
-    background: #f5f5f5;
-    border-radius: 4px;
-}
-.main-midi-controls { /* Specific for main input/output selectors */
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
+/* ===== Save Indicator ===== */
 .save-indicator {
     position: fixed;
-    bottom: 20px;
-    left: 20px;
+    bottom: var(--spacing-xl);
+    left: var(--spacing-xl);
     background: rgba(76, 175, 80, 0.1);
-    color: #4CAF50;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.8em;
+    color: var(--color-success);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--border-radius);
+    font-size: var(--font-size-xs);
     opacity: 0;
-    transition: opacity 0.3s;
+    transition: opacity var(--transition-speed);
     z-index: 1001;
 }
 
-.inversion-display-container { /* Style for the inversion display added in JS */
-    margin-top: 10px;
-    padding: 5px;
-    background: var(--header-bg);
-    border-radius: var(--radius);            
-    font-size: 1.1em;
-}
-.tilt-display {
-    margin-top: 5px;
-    font-size: 0.9em;
-}
-
-.channel-select {
-    margin-left: 8px;
-    padding: 2px 4px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: white;
-    font-size: 0.9em;
-}
-
-.port-label select {
-    margin-right: 4px;  /* Reduce right margin of port selectors */
-}
-
+/* ===== Responsive Design ===== */
 @media (max-width: 768px) {
     .pad-chords-grid {
         grid-template-columns: repeat(2, 1fr);
     }
+    
+    .piano-section {
+        padding: var(--spacing-sm);
+    }
+    
+    .sequence-steps {
+        flex-direction: column;
+    }
+}
+
+/* ===== Utility Classes ===== */
+.pad button, .pad-chord button {
+    all: unset;
+    box-sizing: border-box;
 }
