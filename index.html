@@ -8,7 +8,7 @@
 <body>
 <div id="main">
    <h1 class="page-title">reChord37.com reChord 0.5.0.2 Working on Sequencer</h1>
-   <p class="tagline">Actual Intelligence In Harmony</p>
+   <p class="tagline">Actual Intelligence. Harmony For All Your Chords</p>
     <div class="top-card">
         <div class="song-navigation">
             <button id="song-prev-btn" title="Load previous song">⟨ Prev Song</button>
@@ -20,6 +20,8 @@
         </div>
     </div>
 </div>
+
+
 
 <div class="sequence-section">
     <h3>Sequence</h3>
@@ -1741,7 +1743,7 @@ function addSongControlsDOM() {
     // Add event listener to textarea
     const notesTextarea = songNotesSection.querySelector('#song-notes');
     if (notesTextarea) {
-        domElements.songNotesTextarea = notesTextarea; // Cache it here
+        domElements.songNotesTextarea = notesTextarea;
         notesTextarea.addEventListener('input', debounceSave);
     }
 
@@ -1749,17 +1751,31 @@ function addSongControlsDOM() {
     const sequenceSection = document.querySelector('.sequence-section');
     if (sequenceSection && sequenceSection.parentNode) {
         sequenceSection.parentNode.insertBefore(controlsDiv, sequenceSection.nextSibling);
-    } else { // Fallback if sequence section isn't found (should not happen)
+    } else {
         document.body.appendChild(controlsDiv);
     }
     
     window.addEventListener('hashchange', updateSongNameDisplayInUI);
-    updateSongNameDisplayInUI(); // Initial call
+    updateSongNameDisplayInUI();
 }
 
 function updateSongNameDisplayInUI() {
     const songName = getSongNameFromHash();
     if (domElements.songNameDisplay) domElements.songNameDisplay.textContent = `Song: ${songName || 'default'}`;
+}
+
+// === Pad Rendering Utilities ===
+function renderPadDiv(padId, chord = [], chordName = '', isActive = false) {
+    const noteNames = chord.map(getNoteNameFromMIDI).join(' ');
+    const displayName = chordName || (typeof detectChord === 'function' ? detectChord(chord.map(getNoteNameFromMIDI)) : 'Unknown');
+    return `
+        <div class="pad-chord${isActive ? ' active' : ''}" data-pad-id="${padId}">
+            <div class="pad-name">Pad ${padId}</div>
+            <div class="chord-name">${displayName}</div>
+            <div class="chord-notes">${noteNames}</div>
+            <button class="add-to-sequence" title="Add to sequence">+</button>
+        </div>
+    `;
 }
 
 function updatePadChordsDisplay() {
@@ -1771,33 +1787,47 @@ function updatePadChordsDisplay() {
     
     grid.innerHTML = padNumbers.map(padNumber => {
         const padData = Chords.pads[padNumber];
+        let chord = [];
         let chordName = 'Empty';
-        let chordNotes = '';
         let isActive = false;
         
         if (padData && padData.chord && padData.chord.length > 0) {
-            const notes = padData.chord.map(getNoteNameFromMIDI);
-            chordName = typeof detectChord === 'function' ? detectChord(notes) : 'Chord';
-            chordNotes = notes.join(' ');
-            
+            chord = padData.chord;
+            chordName = '';
             // Check if this pad is currently active (matches current chord)
             if (Chords.string.length > 0) {
-                // Ensure comparison is based on MIDI notes, not just names which can be ambiguous (e.g., C# vs Db)
-                const padMidiNotes = padData.chord.sort((a,b) => a-b);
-                const currentMidiNotes = [...Chords.string].sort((a,b) => a-b); // Ensure sorted copy
+                const padMidiNotes = padData.chord.slice().sort((a,b) => a-b);
+                const currentMidiNotes = [...Chords.string].sort((a,b) => a-b);
                 isActive = padMidiNotes.length === currentMidiNotes.length && 
                           padMidiNotes.every((note, idx) => note === currentMidiNotes[idx]);
             }
         }
-        
-        return `
-            <div class="pad-chord ${isActive ? 'active' : ''}">
-                <div class="pad-number">Pad ${padNumber}</div>
-                <div class="chord-name">${chordName}</div>
-                <div class="chord-notes">${chordNotes}</div>
-            </div>
-        `;
+        return renderPadDiv(padNumber, chord, chordName, isActive);
     }).join('');
+
+    // Add click handlers for the plus buttons
+    grid.querySelectorAll('.add-to-sequence').forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const padId = button.closest('.pad-chord').dataset.padId;
+            if (Chords.sequence.length < MAX_SEQUENCE_LENGTH) {
+                Chords.sequence.push(padId);
+                updateStatus();
+                showNotification(`Added Pad ${padId} to sequence`, 'success');
+            } else {
+                showNotification('Sequence is full (max 16 steps)', 'warning');
+            }
+        });
+    });
+
+    // Add click handler for pad selection (active highlight)
+    grid.querySelectorAll('.pad-chord').forEach(padDiv => {
+        padDiv.addEventListener('click', (e) => {
+            grid.querySelectorAll('.pad-chord').forEach(p => p.classList.remove('active'));
+            padDiv.classList.add('active');
+            // Optionally: load this pad's chord into Chords.string or trigger playback
+        });
+    });
 }
 
 function registerButtons() {
