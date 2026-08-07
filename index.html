@@ -68,8 +68,14 @@ const CHORD_PATTERNS = {
 const OCTAVE_SEMITONES = 12; // Also defined in main script, ensure consistency or pass as arg.
 
 function normalizeNotes(notes) {
-    const getPitchClass = note => note.replace(/[0-9]/g, '').toUpperCase();
-    const semitones = notes.map(n => NOTE_TO_SEMITONE[getPitchClass(n)]);
+    const semitones = notes.map(n => {
+        if (typeof n === 'number') return ((n % 12) + 12) % 12;
+        if (typeof n === 'string') {
+            const pitchClass = n.replace(/[0-9\-]/g, '').toUpperCase();
+            return NOTE_TO_SEMITONE[pitchClass] ?? 0;
+        }
+        return 0;
+    });
     return [...new Set(semitones)];
 }
 
